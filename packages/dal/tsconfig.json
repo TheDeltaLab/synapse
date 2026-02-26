@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "paths": {
+      "@synapse/dal/*": ["./src/*"],
+      "@synapse/dal/prisma": ["./generated/prisma/index.js"],
+      "@synapse/dal/prisma/*": ["./generated/prisma/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "generated"]
+}

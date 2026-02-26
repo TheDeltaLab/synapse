@@ -1,0 +1,28 @@
+{
+  "name": "@synapse/eslint-config",
+  "version": "0.1.0",
+  "description": "Shared ESLint configuration for Synapse monorepo",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./base": {
+      "types": "./base.d.ts",
+      "default": "./base.mjs"
+    },
+    "./next": {
+      "types": "./next.d.ts",
+      "default": "./next.mjs"
+    }
+  },
+  "packageManager": "pnpm@10.28.1",
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.7.1",
+    "eslint": "^9.18.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-unused-imports": "^4.1.4",
+    "typescript-eslint": "^8.20.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  }
+}

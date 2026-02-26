@@ -1,0 +1,46 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  key         String    @unique // bcrypt hash
+  name        String
+  userId      String?   // Optional: for multi-tenant support
+  rateLimit   Int       @default(1000) // requests per hour
+  enabled     Boolean   @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+
+  requestLogs RequestLog[]
+
+  @@index([key])
+  @@map("api_keys")
+}
+
+model RequestLog {
+  id         String   @id @default(uuid())
+  apiKeyId   String
+  apiKey     ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  provider   String   // openai, anthropic, google, etc.
+  model      String   // gpt-4o, claude-3-5-sonnet, etc.
+  tokens     Int?     // Total tokens used
+  latency    Int?     // Milliseconds
+  statusCode Int      // HTTP status code
+  cached     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
+  @@index([provider, model])
+  @@map("request_logs")
+}

@@ -1,0 +1,34 @@
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { authMiddleware } from './middleware/auth.js';
+import { loggerMiddleware } from './middleware/logger.js';
+import { errorHandler } from './middleware/error.js';
+import { handleChatCompletion } from './routes/v1/chat.js';
+
+const app = new Hono();
+
+// Global middleware
+app.use('*', loggerMiddleware);
+app.use('*', cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// Health check endpoint (no auth required)
+app.get('/health', (c) => {
+    return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// API routes with authentication
+app.post('/v1/chat/completions', authMiddleware, handleChatCompletion);
+
+// 404 handler
+app.notFound((c) => {
+    return c.json({ error: 'Not Found', message: 'Endpoint not found' }, 404);
+});
+
+// Error handler
+app.onError(errorHandler);
+
+export default app;

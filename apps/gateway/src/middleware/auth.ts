@@ -1,0 +1,58 @@
+import type { Context, Next } from 'hono';
+import { authService, type ValidatedApiKey } from '../services/auth-service.js';
+import { HTTP_STATUS } from '@synapse/shared';
+
+// Extend Hono context with custom variables
+declare module 'hono' {
+    interface ContextVariableMap {
+        apiKey: ValidatedApiKey;
+    }
+}
+
+export async function authMiddleware(c: Context, next: Next) {
+    const authHeader = c.req.header('Authorization');
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return c.json({
+            error: 'Unauthorized',
+            message: 'Missing or invalid Authorization header',
+        }, HTTP_STATUS.UNAUTHORIZED);
+    }
+
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+
+    try {
+        const validatedKey = await authService.validateApiKey(token);
+
+        if (!validatedKey) {
+            return c.json({
+                error: 'Unauthorized',
+                message: 'Invalid or expired API key',
+            }, HTTP_STATUS.UNAUTHORIZED);
+        }
+
+        // Check rate limit
+        const withinLimit = await authService.checkRateLimit(
+            validatedKey.id,
+            validatedKey.rateLimit
+        );
+
+        if (!withinLimit) {
+            return c.json({
+                error: 'Rate Limit Exceeded',
+                message: `You have exceeded your rate limit of ${validatedKey.rateLimit} requests per hour`,
+            }, HTTP_STATUS.TOO_MANY_REQUESTS);
+        }
+
+        // Attach validated key to context
+        c.set('apiKey', validatedKey);
+
+        await next();
+    } catch (error) {
+        console.error('Auth middleware error:', error);
+        return c.json({
+            error: 'Internal Server Error',
+            message: 'Authentication failed',
+        }, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+    }
+}

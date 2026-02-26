@@ -1,0 +1,36 @@
+{
+  "name": "gateway",
+  "version": "0.1.0",
+  "description": "AI Gateway API built with Hono",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsup",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "dependencies": {
+    "@ai-sdk/openai": "^1.0.10",
+    "@ai-sdk/anthropic": "^1.0.9",
+    "@ai-sdk/google": "^1.0.10",
+    "@hono/node-server": "^1.14.0",
+    "@synapse/dal": "workspace:*",
+    "@synapse/shared": "workspace:*",
+    "ai": "^4.0.38",
+    "hono": "^4.7.12",
+    "ioredis": "^5.4.2",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/bcrypt": "^5.0.2",
+    "tsx": "^4.19.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  }
+}

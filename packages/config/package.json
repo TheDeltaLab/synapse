@@ -1,0 +1,20 @@
+{
+  "name": "@synapse/config",
+  "version": "0.1.0",
+  "description": "Shared build and tooling configuration for Synapse monorepo",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./tsup-config": {
+      "import": "./tsup-config.js",
+      "default": "./tsup-config.js"
+    }
+  },
+  "packageManager": "pnpm@10.28.1",
+  "devDependencies": {
+    "tsup": "^8.3.5"
+  },
+  "peerDependencies": {
+    "tsup": "^8.0.0"
+  }
+}
