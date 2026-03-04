@@ -86,3 +86,7 @@ Copy `.env.example` and configure:
 - `DATABASE_URL` - PostgreSQL connection string
 - `REDIS_URL` - Redis connection string (optional)
 - `PORT` - Gateway port (default 3000)
+
+## Important Notes
+
+- **Package Manager**: This project uses pnpm exclusively. Always use `pnpm` or `pnpx` instead of `npm`/`npx`.
