@@ -12,6 +12,10 @@ export const providerConfig = {
         apiKey: process.env.GOOGLE_API_KEY || '',
         defaultModel: 'gemini-2.0-flash-exp',
     },
+    openrouter: {
+        apiKey: process.env.OPENROUTER_API_KEY || '',
+        defaultModel: 'gpt-5-mini',
+    },
 } as const;
 
 export type ProviderName = keyof typeof providerConfig;
