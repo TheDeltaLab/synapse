@@ -1,9 +1,9 @@
 import type { Context } from 'hono';
 import { streamText } from 'ai';
 import { chatCompletionRequestSchema, HTTP_STATUS } from '@synapse/shared';
-import { providerRegistry } from '../services/provider-registry.js';
+import { providerRegistry } from '@synapse/services/provider-registry.js';
 import { prisma } from '@synapse/dal';
-import type { ProviderName } from '../config/providers.js';
+import type { ProviderName } from '@synapse/config/providers.js';
 
 export async function handleChatCompletion(c: Context) {
     try {

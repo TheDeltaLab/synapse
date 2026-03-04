@@ -11,9 +11,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./prisma": {
-      "types": "./generated/prisma/index.d.ts",
-      "default": "./generated/prisma/index.js"
+    "./prisma/client": {
+      "types": "./generated/prisma/client.ts",
+      "default": "./generated/prisma/client.ts"
     }
   },
   "scripts": {
@@ -25,9 +25,11 @@
   },
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
+    "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.1"
   },
   "devDependencies": {
+    "@types/node": "^22.19.12",
     "prisma": "^7.4.1",
     "tsx": "^4.19.2"
   }
