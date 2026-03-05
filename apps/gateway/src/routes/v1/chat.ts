@@ -117,8 +117,8 @@ export async function handleChatCompletion(c: Context) {
                         model: modelId,
                         statusCode: 200,
                         latency,
-                        inputTokens: usage.promptTokens,
-                        outputTokens: usage.completionTokens,
+                        inputTokens: usage.inputTokens,
+                        outputTokens: usage.outputTokens,
                         totalTokens: usage.totalTokens,
                         promptMessages: request.messages.map(msg => ({
                             role: msg.role,
@@ -178,8 +178,8 @@ export async function handleChatCompletion(c: Context) {
             model: modelId,
             statusCode: 200,
             latency,
-            inputTokens: usage.promptTokens,
-            outputTokens: usage.completionTokens,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
             totalTokens: usage.totalTokens,
             promptMessages: request.messages.map(msg => ({
                 role: msg.role,
@@ -206,8 +206,8 @@ export async function handleChatCompletion(c: Context) {
                 },
             ],
             usage: {
-                prompt_tokens: usage.promptTokens,
-                completion_tokens: usage.completionTokens,
+                prompt_tokens: usage.inputTokens,
+                completion_tokens: usage.outputTokens,
                 total_tokens: usage.totalTokens,
             },
         });
