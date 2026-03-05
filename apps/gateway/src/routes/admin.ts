@@ -37,10 +37,21 @@ const formatApiKeyResponse = (apiKey: {
     expiresAt: apiKey.expiresAt?.toISOString() ?? null,
 });
 
-// Generate a secure API key
+// API key version - increment when key format changes
+const API_KEY_VERSION = 'v1';
+
+// Lowercase alphanumeric characters (like OpenRouter)
+const ALPHANUMERIC_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
+
+// Generate a secure API key with versioned format: sk-syn-v1-{randomPart}
+// randomPart contains only lowercase letters and numbers (like OpenRouter)
 const generateApiKey = (): string => {
-    const prefix = 'sk-syn';
-    const randomPart = randomBytes(24).toString('base64url');
+    const prefix = `sk-syn-${API_KEY_VERSION}`;
+    const bytes = randomBytes(48);
+    let randomPart = '';
+    for (let i = 0; i < 48; i++) {
+        randomPart += ALPHANUMERIC_CHARS[bytes[i]! % ALPHANUMERIC_CHARS.length];
+    }
     return `${prefix}-${randomPart}`;
 };
 
