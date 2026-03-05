@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import type { ModelSelection } from '@/components/playground/model-selector';
 import { DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS } from '@/lib/constants';
 import { gateway } from '@/lib/gateway';
-import type { ModelSelection } from '@/components/playground/model-selector';
 
 export interface Message {
     id: string;

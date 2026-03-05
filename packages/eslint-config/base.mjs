@@ -31,9 +31,10 @@ export default defineConfig([
         rules: {
             '@typescript-eslint/no-namespace': ['off'],
             '@typescript-eslint/no-explicit-any': ['warn'],
+            '@stylistic/multiline-ternary': ['off'],
             'import/order': ['error', {
                 groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
-                alphabetize: { order: 'asc', caseInsensitive: false }
+                alphabetize: { order: 'asc', caseInsensitive: false },
             }],
             '@typescript-eslint/no-unused-vars': ['error', {
                 argsIgnorePattern: '^_',

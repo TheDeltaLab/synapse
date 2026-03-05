@@ -1,5 +1,5 @@
-import { prisma } from '@synapse/dal';
 import bcrypt from 'bcrypt';
+import { prisma } from '@synapse/dal';
 
 export interface ValidatedApiKey {
     id: string;

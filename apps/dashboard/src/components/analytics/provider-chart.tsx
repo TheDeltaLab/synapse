@@ -1,8 +1,8 @@
 'use client';
 
 import { PieChart, Pie, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ProviderStats } from '@synapse/shared';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface ProviderChartProps {
     data: ProviderStats[];
@@ -47,8 +47,7 @@ export function ProviderChart({ data }: ProviderChartProps) {
                             paddingAngle={2}
                             dataKey="value"
                             label={({ name, percent }: { name?: string; percent?: number }) =>
-                                `${name || ''} (${((percent || 0) * 100).toFixed(0)}%)`
-                            }
+                                `${name || ''} (${((percent || 0) * 100).toFixed(0)}%)`}
                             labelLine={false}
                         />
                         <Tooltip />

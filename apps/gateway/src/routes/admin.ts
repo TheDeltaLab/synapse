@@ -1,6 +1,6 @@
-import { Hono } from 'hono';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcrypt';
+import { Hono } from 'hono';
 import { prisma, decryptContent } from '@synapse/dal';
 import {
     createApiKeySchema,
@@ -106,7 +106,7 @@ admin.get('/api-keys/:id', async (c) => {
     if (!apiKey) {
         return c.json(
             { error: 'Not Found', message: 'API key not found' },
-            HTTP_STATUS.NOT_FOUND
+            HTTP_STATUS.NOT_FOUND,
         );
     }
 
@@ -125,7 +125,7 @@ admin.post('/api-keys', async (c) => {
                 message: 'Invalid request body',
                 details: parsed.error.flatten().fieldErrors,
             },
-            HTTP_STATUS.BAD_REQUEST
+            HTTP_STATUS.BAD_REQUEST,
         );
     }
 
@@ -176,7 +176,7 @@ admin.patch('/api-keys/:id', async (c) => {
                 message: 'Invalid request body',
                 details: parsed.error.flatten().fieldErrors,
             },
-            HTTP_STATUS.BAD_REQUEST
+            HTTP_STATUS.BAD_REQUEST,
         );
     }
 
@@ -188,7 +188,7 @@ admin.patch('/api-keys/:id', async (c) => {
     if (!existing) {
         return c.json(
             { error: 'Not Found', message: 'API key not found' },
-            HTTP_STATUS.NOT_FOUND
+            HTTP_STATUS.NOT_FOUND,
         );
     }
 
@@ -231,7 +231,7 @@ admin.delete('/api-keys/:id', async (c) => {
     if (!existing) {
         return c.json(
             { error: 'Not Found', message: 'API key not found' },
-            HTTP_STATUS.NOT_FOUND
+            HTTP_STATUS.NOT_FOUND,
         );
     }
 
@@ -276,7 +276,7 @@ admin.get('/logs', async (c) => {
                 message: 'Invalid query parameters',
                 details: parsed.error.flatten().fieldErrors,
             },
-            HTTP_STATUS.BAD_REQUEST
+            HTTP_STATUS.BAD_REQUEST,
         );
     }
 
@@ -362,7 +362,7 @@ admin.get('/logs/analytics', async (c) => {
                 message: 'Invalid query parameters',
                 details: parsed.error.flatten().fieldErrors,
             },
-            HTTP_STATUS.BAD_REQUEST
+            HTTP_STATUS.BAD_REQUEST,
         );
     }
 
@@ -571,7 +571,7 @@ admin.get('/logs/:id', async (c) => {
     if (!log) {
         return c.json(
             { error: 'Not Found', message: 'Request log not found' },
-            HTTP_STATUS.NOT_FOUND
+            HTTP_STATUS.NOT_FOUND,
         );
     }
 
@@ -580,7 +580,7 @@ admin.get('/logs/:id', async (c) => {
         log.promptContent,
         log.responseContent,
         log.contentIv,
-        log.contentTag
+        log.contentTag,
     );
 
     const response: RequestLogDetail = {

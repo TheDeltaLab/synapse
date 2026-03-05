@@ -1,7 +1,7 @@
-import type { StreamingAdapter } from './types.js';
-import { OpenAIAdapter } from './openai-adapter.js';
 import { AnthropicAdapter } from './anthropic-adapter.js';
 import { GoogleAdapter } from './google-adapter.js';
+import { OpenAIAdapter } from './openai-adapter.js';
+import type { StreamingAdapter } from './types.js';
 
 // Re-export types and adapters
 export type { ChunkMetadata, StreamingAdapter } from './types.js';

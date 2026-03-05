@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authMiddleware } from './middleware/auth.js';
-import { loggerMiddleware } from './middleware/logger.js';
 import { errorHandler } from './middleware/error.js';
-import { handleChatCompletion } from './routes/v1/chat.js';
+import { loggerMiddleware } from './middleware/logger.js';
 import { admin } from './routes/admin.js';
+import { handleChatCompletion } from './routes/v1/chat.js';
 
 const app = new Hono();
 

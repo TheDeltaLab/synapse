@@ -8,7 +8,7 @@ import type { ChatMessage } from '../types/chat.js';
 export function generateCacheKey(
     provider: string,
     model: string,
-    messages: ChatMessage[]
+    messages: ChatMessage[],
 ): string {
     const messagesStr = JSON.stringify(messages);
     const hash = crypto.createHash('sha256').update(messagesStr).digest('hex').substring(0, 16);

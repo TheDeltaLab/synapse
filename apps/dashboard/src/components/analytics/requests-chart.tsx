@@ -1,8 +1,8 @@
 'use client';
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { RequestsOverTimePoint } from '@synapse/shared';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface RequestsChartProps {
     data: RequestsOverTimePoint[];

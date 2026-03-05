@@ -1,5 +1,5 @@
 export { prisma } from './client.js';
-export type { ApiKey, RequestLog } from '@synapse/dal/prisma/index.js';
+export type { ApiKeyModel as ApiKey, RequestLogModel as RequestLog } from '../generated/prisma/models.js';
 export {
     encrypt,
     decrypt,

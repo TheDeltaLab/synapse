@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import type { LatencyOverTimePoint, ModelLatencyStats } from '@synapse/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Select,
@@ -10,7 +11,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import type { LatencyOverTimePoint, ModelLatencyStats } from '@synapse/shared';
 
 type PercentileType = 'p50' | 'p90' | 'p99' | 'avg';
 
@@ -88,7 +88,7 @@ export function LatencyChart({ data, modelStats }: LatencyChartProps) {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Models</SelectItem>
-                                {models.map((model) => (
+                                {models.map(model => (
                                     <SelectItem key={model} value={model}>
                                         {model.length > 20 ? model.slice(0, 17) + '...' : model}
                                     </SelectItem>
@@ -98,7 +98,7 @@ export function LatencyChart({ data, modelStats }: LatencyChartProps) {
                     </div>
                 </div>
                 <div className="flex gap-1 mt-2">
-                    {PERCENTILE_OPTIONS.map((option) => (
+                    {PERCENTILE_OPTIONS.map(option => (
                         <button
                             key={option.value}
                             onClick={() => togglePercentile(option.value)}
@@ -114,37 +114,39 @@ export function LatencyChart({ data, modelStats }: LatencyChartProps) {
                 </div>
             </CardHeader>
             <CardContent>
-                {selectedModel !== 'all' && selectedModelStats ? (
-                    <div className="mb-4 p-3 rounded-lg bg-muted/50">
-                        <p className="text-sm font-medium mb-2">{selectedModelStats.model}</p>
-                        <div className="grid grid-cols-4 gap-4 text-sm">
-                            <div>
-                                <p className="text-muted-foreground">P50</p>
-                                <p className="font-medium">{selectedModelStats.p50 ? `${Math.round(selectedModelStats.p50)}ms` : '-'}</p>
+                {selectedModel !== 'all' && selectedModelStats
+                    ? (
+                            <div className="mb-4 p-3 rounded-lg bg-muted/50">
+                                <p className="text-sm font-medium mb-2">{selectedModelStats.model}</p>
+                                <div className="grid grid-cols-4 gap-4 text-sm">
+                                    <div>
+                                        <p className="text-muted-foreground">P50</p>
+                                        <p className="font-medium">{selectedModelStats.p50 ? `${Math.round(selectedModelStats.p50)}ms` : '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-muted-foreground">P90</p>
+                                        <p className="font-medium">{selectedModelStats.p90 ? `${Math.round(selectedModelStats.p90)}ms` : '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-muted-foreground">P99</p>
+                                        <p className="font-medium">{selectedModelStats.p99 ? `${Math.round(selectedModelStats.p99)}ms` : '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-muted-foreground">Avg</p>
+                                        <p className="font-medium">{selectedModelStats.avg ? `${Math.round(selectedModelStats.avg)}ms` : '-'}</p>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-muted-foreground">P90</p>
-                                <p className="font-medium">{selectedModelStats.p90 ? `${Math.round(selectedModelStats.p90)}ms` : '-'}</p>
-                            </div>
-                            <div>
-                                <p className="text-muted-foreground">P99</p>
-                                <p className="font-medium">{selectedModelStats.p99 ? `${Math.round(selectedModelStats.p99)}ms` : '-'}</p>
-                            </div>
-                            <div>
-                                <p className="text-muted-foreground">Avg</p>
-                                <p className="font-medium">{selectedModelStats.avg ? `${Math.round(selectedModelStats.avg)}ms` : '-'}</p>
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
+                        )
+                    : null}
                 <ResponsiveContainer width="100%" height={selectedModel !== 'all' ? 220 : 300}>
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} unit="ms" />
                         <Tooltip
-                            formatter={(value: number | null | undefined) => [
-                                value != null ? `${value}ms` : '-',
+                            formatter={value => [
+                                typeof value === 'number' ? `${value}ms` : '-',
                             ]}
                         />
                         <Legend />

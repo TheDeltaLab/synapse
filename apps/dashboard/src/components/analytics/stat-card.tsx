@@ -1,8 +1,8 @@
 'use client';
 
+import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
 
 interface StatCardProps {
     title: string;
@@ -37,10 +37,12 @@ export function StatCard({
                         <span
                             className={cn(
                                 'text-xs font-medium',
-                                trend.isPositive ? 'text-green-600' : 'text-red-600'
+                                trend.isPositive ? 'text-green-600' : 'text-red-600',
                             )}
                         >
-                            {trend.isPositive ? '+' : '-'}{Math.abs(trend.value)}%
+                            {trend.isPositive ? '+' : '-'}
+                            {Math.abs(trend.value)}
+                            %
                         </span>
                     )}
                 </div>

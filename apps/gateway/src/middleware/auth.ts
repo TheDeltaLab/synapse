@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono';
-import { authService, type ValidatedApiKey } from '../services/auth-service.js';
 import { HTTP_STATUS } from '@synapse/shared';
+import { authService, type ValidatedApiKey } from '../services/auth-service.js';
 
 // Extend Hono context with custom variables
 declare module 'hono' {
@@ -34,7 +34,7 @@ export async function authMiddleware(c: Context, next: Next) {
         // Check rate limit
         const withinLimit = await authService.checkRateLimit(
             validatedKey.id,
-            validatedKey.rateLimit
+            validatedKey.rateLimit,
         );
 
         if (!withinLimit) {
