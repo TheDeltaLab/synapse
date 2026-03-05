@@ -4,6 +4,7 @@ import type {
     ApiKeyListResponse,
     CreateApiKeyInput,
     UpdateApiKeyInput,
+    ProvidersResponse,
 } from '@synapse/shared';
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3000';
@@ -67,22 +68,39 @@ class GatewayClient {
         }
     }
 
+    // Providers
+    async getProviders(): Promise<ProvidersResponse> {
+        const response = await fetch(`${this.baseUrl}/admin/providers`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch providers: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
     // Chat completions (for playground)
     async* streamChatCompletion(
         apiKey: string,
         messages: Array<{ role: string; content: string }>,
         options: {
             model: string;
+            provider?: string;
             temperature?: number;
             maxTokens?: number;
         },
     ): AsyncGenerator<string, void, unknown> {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        };
+
+        // Add provider header if specified
+        if (options.provider) {
+            headers['x-synapse-provider'] = options.provider;
+        }
+
         const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
+            headers,
             body: JSON.stringify({
                 model: options.model,
                 messages,

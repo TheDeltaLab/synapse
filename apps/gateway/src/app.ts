@@ -13,7 +13,7 @@ app.use('*', loggerMiddleware);
 app.use('*', cors({
     origin: '*',
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-synapse-provider'],
 }));
 
 // Health check endpoint (no auth required)

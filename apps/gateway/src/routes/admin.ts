@@ -9,7 +9,10 @@ import {
     type ApiKeyResponse,
     type ApiKeyCreatedResponse,
     type ApiKeyListResponse,
+    type ProvidersResponse,
 } from '@synapse/shared';
+import { providerConfig, type ProviderName } from '../config/providers.js';
+import { providerRegistry } from '../services/provider-registry.js';
 
 const admin = new Hono();
 
@@ -38,7 +41,7 @@ const formatApiKeyResponse = (apiKey: {
 const generateApiKey = (): string => {
     const prefix = 'sk-syn';
     const randomPart = randomBytes(24).toString('base64url');
-    return `${prefix}_${randomPart}`;
+    return `${prefix}-${randomPart}`;
 };
 
 // List all API keys
@@ -220,6 +223,19 @@ admin.delete('/api-keys/:id', async (c) => {
     });
 
     return c.json({ message: 'API key deleted successfully' });
+});
+
+// GET /admin/providers - List available providers and their models
+admin.get('/providers', (c) => {
+    const providers = Object.entries(providerConfig).map(([name, config]) => ({
+        name,
+        models: [...config.models],
+        defaultModel: config.defaultModel,
+        available: providerRegistry.hasProvider(name as ProviderName),
+    }));
+
+    const response: ProvidersResponse = { providers };
+    return c.json(response);
 });
 
 export { admin };

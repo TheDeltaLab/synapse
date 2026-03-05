@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS } from '@/lib/constants';
 import { gateway } from '@/lib/gateway';
+import type { ModelSelection } from '@/components/playground/model-selector';
 
 export interface Message {
     id: string;
@@ -11,17 +12,20 @@ export interface Message {
 }
 
 export interface ChatSettings {
-    model: string;
+    modelSelection: ModelSelection;
     temperature: number;
     maxTokens: number;
 }
+
+// Default provider when none is configured
+const DEFAULT_PROVIDER = 'openai';
 
 export function useChat() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [settings, setSettings] = useState<ChatSettings>({
-        model: DEFAULT_MODEL,
+        modelSelection: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
         temperature: DEFAULT_TEMPERATURE,
         maxTokens: DEFAULT_MAX_TOKENS,
     });
@@ -54,7 +58,8 @@ export function useChat() {
             }));
 
             const stream = gateway.streamChatCompletion(apiKey, allMessages, {
-                model: settings.model,
+                model: settings.modelSelection.model,
+                provider: settings.modelSelection.provider,
                 temperature: settings.temperature,
                 maxTokens: settings.maxTokens,
             });

@@ -5,6 +5,8 @@ export type {
     ApiKeyResponse,
     ApiKeyCreatedResponse,
     ApiKeyListResponse,
+    ProviderInfo,
+    ProvidersResponse,
 } from '../schemas/admin.js';
 
 // Additional admin-related types

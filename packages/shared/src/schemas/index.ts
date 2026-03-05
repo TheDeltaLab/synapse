@@ -15,9 +15,13 @@ export {
     apiKeyResponseSchema,
     apiKeyCreatedResponseSchema,
     apiKeyListResponseSchema,
+    providerInfoSchema,
+    providersResponseSchema,
     type CreateApiKeyInput,
     type UpdateApiKeyInput,
     type ApiKeyResponse,
     type ApiKeyCreatedResponse,
     type ApiKeyListResponse,
+    type ProviderInfo,
+    type ProvidersResponse,
 } from './admin.js';

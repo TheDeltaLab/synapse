@@ -22,6 +22,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "synapse/*": ["./src/*"],
       "@synapse/shared": ["../../packages/shared/src/index.ts"],
       "@synapse/shared/*": ["../../packages/shared/src/*"]
     }

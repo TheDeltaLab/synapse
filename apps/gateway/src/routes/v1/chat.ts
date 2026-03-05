@@ -22,8 +22,9 @@ export async function handleChatCompletion(c: Context) {
         const request = parseResult.data;
         const apiKey = c.get('apiKey');
 
-        // Determine provider from model or use default
-        const provider = determineProvider(request.model);
+        // Use provider from x-synapse-provider header, or fall back to determining from model name
+        const providerHeader = c.req.header('x-synapse-provider');
+        const provider = (providerHeader as ProviderName) || determineProvider(request.model);
         const modelId = request.model;
 
         // Check if provider is available
@@ -55,7 +56,81 @@ export async function handleChatCompletion(c: Context) {
             // Log request
             logRequest(apiKey.id, provider, modelId, 200, false, Date.now() - startTime);
 
-            return result.toDataStreamResponse();
+            // Create OpenAI-compatible SSE stream
+            const chatId = `chatcmpl-${Date.now()}`;
+            const created = Math.floor(Date.now() / 1000);
+            const encoder = new TextEncoder();
+
+            // Use TransformStream to convert text chunks to SSE format
+            const { readable, writable } = new TransformStream();
+            const writer = writable.getWriter();
+
+            // Process stream in background
+            (async () => {
+                try {
+                    for await (const chunk of result.textStream) {
+                        const data = {
+                            id: chatId,
+                            object: 'chat.completion.chunk',
+                            created,
+                            model: modelId,
+                            choices: [
+                                {
+                                    index: 0,
+                                    delta: { content: chunk },
+                                    finish_reason: null,
+                                },
+                            ],
+                        };
+                        await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+                    }
+
+                    // Send final chunk with finish_reason
+                    const finalData = {
+                        id: chatId,
+                        object: 'chat.completion.chunk',
+                        created,
+                        model: modelId,
+                        choices: [
+                            {
+                                index: 0,
+                                delta: {},
+                                finish_reason: 'stop',
+                            },
+                        ],
+                    };
+                    await writer.write(encoder.encode(`data: ${JSON.stringify(finalData)}\n\n`));
+                    await writer.write(encoder.encode('data: [DONE]\n\n'));
+                } catch (error) {
+                    console.error('Stream processing error:', error);
+                    // Try to send error to client
+                    try {
+                        const errorData = {
+                            error: {
+                                message: error instanceof Error ? error.message : 'Stream error',
+                                type: 'stream_error',
+                            },
+                        };
+                        await writer.write(encoder.encode(`data: ${JSON.stringify(errorData)}\n\n`));
+                    } catch {
+                        // Ignore write errors
+                    }
+                } finally {
+                    try {
+                        await writer.close();
+                    } catch {
+                        // Ignore close errors
+                    }
+                }
+            })();
+
+            return new Response(readable, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
         }
 
         // Handle non-streaming response

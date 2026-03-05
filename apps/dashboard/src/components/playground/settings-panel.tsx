@@ -1,7 +1,7 @@
 'use client';
 
 import { Trash2 } from 'lucide-react';
-import { ModelSelector } from './model-selector';
+import { ModelSelector, type ModelSelection } from './model-selector';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -15,6 +15,10 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ settings, onSettingsChange, onClear, hasMessages }: SettingsPanelProps) {
+    const handleModelChange = (modelSelection: ModelSelection) => {
+        onSettingsChange({ modelSelection });
+    };
+
     return (
         <div className="space-y-6">
             <div>
@@ -26,8 +30,8 @@ export function SettingsPanel({ settings, onSettingsChange, onClear, hasMessages
                 <div className="space-y-2">
                     <Label>Model</Label>
                     <ModelSelector
-                        value={settings.model}
-                        onChange={model => onSettingsChange({ model })}
+                        value={settings.modelSelection}
+                        onChange={handleModelChange}
                     />
                 </div>
 

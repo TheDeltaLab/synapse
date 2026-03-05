@@ -41,3 +41,18 @@ export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
 export type ApiKeyResponse = z.infer<typeof apiKeyResponseSchema>;
 export type ApiKeyCreatedResponse = z.infer<typeof apiKeyCreatedResponseSchema>;
 export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
+
+// Provider schemas
+export const providerInfoSchema = z.object({
+    name: z.string(),
+    models: z.array(z.string()),
+    defaultModel: z.string(),
+    available: z.boolean(), // true if API key is configured
+});
+
+export const providersResponseSchema = z.object({
+    providers: z.array(providerInfoSchema),
+});
+
+export type ProviderInfo = z.infer<typeof providerInfoSchema>;
+export type ProvidersResponse = z.infer<typeof providersResponseSchema>;
