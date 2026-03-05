@@ -1,10 +1,28 @@
 import type { Context } from 'hono';
 import { streamText } from 'ai';
-import { chatCompletionRequestSchema, HTTP_STATUS } from '@synapse/shared';
+import { chatCompletionRequestSchema, HTTP_STATUS, type CacheType } from '@synapse/shared';
 import { providerRegistry } from '@synapse/services/provider-registry.js';
-import { prisma } from '@synapse/dal';
+import { prisma, encryptContent, isEncryptionConfigured } from '@synapse/dal';
 import type { ProviderName } from '@synapse/config/providers.js';
 import { getAdapter } from '../../adapters/index.js';
+
+interface LogRequestParams {
+    apiKeyId: string;
+    provider: string;
+    model: string;
+    statusCode: number;
+    latency: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    promptMessages?: Array<{ role: string; content: string }>;
+    responseContent?: string;
+    cached?: boolean;
+    cacheType?: CacheType;
+    cacheTtl?: number;
+    costSaving?: number;
+    latencySaving?: number;
+}
 
 export async function handleChatCompletion(c: Context) {
     try {
@@ -54,9 +72,6 @@ export async function handleChatCompletion(c: Context) {
                 topP: request.top_p,
             });
 
-            // Log request
-            logRequest(apiKey.id, provider, modelId, 200, false, Date.now() - startTime);
-
             // Get the streaming adapter based on x-synapse-response-style header
             const responseStyle = c.req.header('x-synapse-response-style') || 'openai';
             const adapter = getAdapter(responseStyle);
@@ -77,10 +92,14 @@ export async function handleChatCompletion(c: Context) {
             const { readable, writable } = new TransformStream();
             const writer = writable.getWriter();
 
+            // Collect response for logging
+            let fullResponse = '';
+
             // Process stream in background
             (async () => {
                 try {
                     for await (const chunk of result.textStream) {
+                        fullResponse += chunk;
                         const formatted = adapter.formatChunk(chunk, metadata);
                         await writer.write(encoder.encode(formatted));
                     }
@@ -88,6 +107,26 @@ export async function handleChatCompletion(c: Context) {
                     // Send final chunk with finish_reason
                     await writer.write(encoder.encode(adapter.formatFinalChunk(metadata)));
                     await writer.write(encoder.encode(adapter.formatDone()));
+
+                    // Log request after stream completes
+                    const usage = await result.usage;
+                    const latency = Date.now() - startTime;
+                    logRequest({
+                        apiKeyId: apiKey.id,
+                        provider,
+                        model: modelId,
+                        statusCode: 200,
+                        latency,
+                        inputTokens: usage.promptTokens,
+                        outputTokens: usage.completionTokens,
+                        totalTokens: usage.totalTokens,
+                        promptMessages: request.messages.map(msg => ({
+                            role: msg.role,
+                            content: msg.content,
+                        })),
+                        responseContent: fullResponse,
+                        cached: false,
+                    });
                 } catch (error) {
                     console.error('Stream processing error:', error);
                     // Try to send error to client
@@ -132,16 +171,23 @@ export async function handleChatCompletion(c: Context) {
         const usage = await result.usage;
         const latency = Date.now() - startTime;
 
-        // Log request
-        await logRequest(
-            apiKey.id,
+        // Log request with detailed data
+        await logRequest({
+            apiKeyId: apiKey.id,
             provider,
-            modelId,
-            200,
-            false,
+            model: modelId,
+            statusCode: 200,
             latency,
-            usage.totalTokens
-        );
+            inputTokens: usage.promptTokens,
+            outputTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+            promptMessages: request.messages.map(msg => ({
+                role: msg.role,
+                content: msg.content,
+            })),
+            responseContent: text,
+            cached: false,
+        });
 
         // Return OpenAI-compatible response
         return c.json({
@@ -194,25 +240,32 @@ function determineProvider(model: string): ProviderName {
 /**
  * Log request to database
  */
-async function logRequest(
-    apiKeyId: string,
-    provider: string,
-    model: string,
-    statusCode: number,
-    cached: boolean,
-    latency: number,
-    tokens?: number
-): Promise<void> {
+async function logRequest(params: LogRequestParams): Promise<void> {
     try {
+        // Encrypt content if encryption is configured
+        const encryptedContent = isEncryptionConfigured()
+            ? encryptContent(params.promptMessages, params.responseContent)
+            : { promptContent: null, responseContent: null, contentIv: null, contentTag: null };
+
         await prisma.requestLog.create({
             data: {
-                apiKeyId,
-                provider,
-                model,
-                statusCode,
-                cached,
-                latency,
-                tokens: tokens || null,
+                apiKeyId: params.apiKeyId,
+                provider: params.provider,
+                model: params.model,
+                statusCode: params.statusCode,
+                latency: params.latency,
+                inputTokens: params.inputTokens ?? null,
+                outputTokens: params.outputTokens ?? null,
+                totalTokens: params.totalTokens ?? null,
+                promptContent: encryptedContent.promptContent,
+                responseContent: encryptedContent.responseContent,
+                contentIv: encryptedContent.contentIv,
+                contentTag: encryptedContent.contentTag,
+                cached: params.cached ?? false,
+                cacheType: params.cacheType ?? null,
+                cacheTtl: params.cacheTtl ?? null,
+                costSaving: params.costSaving ?? null,
+                latencySaving: params.latencySaving ?? null,
             },
         });
     } catch (error) {

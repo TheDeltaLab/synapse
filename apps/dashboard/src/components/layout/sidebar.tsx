@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare, Key, Zap } from 'lucide-react';
+import { MessageSquare, Key, Zap, BarChart3, ScrollText } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 const navigation = [
     { name: 'Playground', href: '/playground', icon: MessageSquare },
     { name: 'API Keys', href: '/api-keys', icon: Key },
+    { name: 'Analytics', href: '/logs/analytics', icon: BarChart3 },
+    { name: 'Logs', href: '/logs', icon: ScrollText, exact: true },
 ];
 
 export function Sidebar() {
@@ -24,7 +26,9 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex-1 space-y-1 p-4">
                 {navigation.map((item) => {
-                    const isActive = pathname.startsWith(item.href);
+                    const isActive = item.exact
+                        ? pathname === item.href
+                        : pathname.startsWith(item.href);
                     return (
                         <Link
                             key={item.name}

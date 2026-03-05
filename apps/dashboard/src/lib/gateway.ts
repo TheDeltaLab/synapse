@@ -5,6 +5,11 @@ import type {
     CreateApiKeyInput,
     UpdateApiKeyInput,
     ProvidersResponse,
+    RequestLogListResponse,
+    RequestLogDetail,
+    AnalyticsResponse,
+    LogsQuery,
+    AnalyticsQuery,
 } from '@synapse/shared';
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3000';
@@ -73,6 +78,46 @@ class GatewayClient {
         const response = await fetch(`${this.baseUrl}/admin/providers`);
         if (!response.ok) {
             throw new Error(`Failed to fetch providers: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
+    // Logs
+    async listLogs(query?: Partial<LogsQuery>): Promise<RequestLogListResponse> {
+        const params = new URLSearchParams();
+        if (query?.page) params.set('page', query.page.toString());
+        if (query?.limit) params.set('limit', query.limit.toString());
+        if (query?.provider) params.set('provider', query.provider);
+        if (query?.model) params.set('model', query.model);
+        if (query?.cached !== undefined) params.set('cached', query.cached);
+        if (query?.startDate) params.set('startDate', query.startDate);
+        if (query?.endDate) params.set('endDate', query.endDate);
+        if (query?.apiKeyId) params.set('apiKeyId', query.apiKeyId);
+
+        const url = `${this.baseUrl}/admin/logs${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to list logs: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
+    async getLog(id: string): Promise<RequestLogDetail> {
+        const response = await fetch(`${this.baseUrl}/admin/logs/${id}`);
+        if (!response.ok) {
+            throw new Error(`Failed to get log: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
+    async getAnalytics(query?: Partial<AnalyticsQuery>): Promise<AnalyticsResponse> {
+        const params = new URLSearchParams();
+        if (query?.range) params.set('range', query.range);
+
+        const url = `${this.baseUrl}/admin/logs/analytics${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to get analytics: ${response.statusText}`);
         }
         return response.json();
     }

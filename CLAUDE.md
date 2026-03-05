@@ -29,6 +29,7 @@ pnpm --filter @synapse/dal db:seed       # Seed database
 ### Running a Single Package
 ```bash
 pnpm --filter @synapse/gateway dev       # Run only gateway
+pnpm --filter @synapse/dashboard dev     # Run only dashboard (port 3001)
 pnpm --filter @synapse/shared lint       # Lint only shared package
 ```
 
@@ -37,18 +38,35 @@ pnpm --filter @synapse/shared lint       # Lint only shared package
 ```
 synapse/
 ├── apps/
-│   └── gateway/              # Hono HTTP server (port 3000)
-│       ├── src/
-│       │   ├── index.ts      # Entry point
-│       │   ├── app.ts        # Route setup & middleware chain
-│       │   ├── config/       # LLM provider configurations
-│       │   ├── middleware/   # auth, logger, error handlers
-│       │   ├── routes/v1/    # API endpoints (chat.ts)
-│       │   └── services/     # Provider registry, auth service
+│   ├── gateway/              # Hono HTTP server (port 3000)
+│   │   ├── src/
+│   │   │   ├── index.ts      # Entry point
+│   │   │   ├── app.ts        # Route setup & middleware chain
+│   │   │   ├── config/       # LLM provider configurations
+│   │   │   ├── middleware/   # auth, logger, error handlers
+│   │   │   ├── routes/v1/    # API endpoints (chat.ts)
+│   │   │   ├── routes/admin.ts # Admin API (api-keys, logs, analytics)
+│   │   │   └── services/     # Provider registry, auth service
+│   │
+│   └── dashboard/            # Next.js admin dashboard (port 3001)
+│       └── src/
+│           ├── app/(dashboard)/  # Dashboard pages
+│           │   ├── playground/   # Interactive chat testing
+│           │   ├── api-keys/     # API key management
+│           │   ├── logs/         # Request logs table
+│           │   └── logs/analytics/ # Analytics charts
+│           ├── components/       # UI components
+│           │   ├── layout/       # Sidebar, Header
+│           │   ├── analytics/    # Chart components
+│           │   └── logs/         # Log table, filters, detail dialog
+│           └── lib/gateway.ts    # Gateway API client
 │
 ├── packages/
 │   ├── shared/               # Types, Zod schemas, utilities
-│   ├── dal/                  # Prisma ORM (ApiKey, RequestLog models)
+│   │   └── src/schemas/      # Zod schemas (chat, admin, logs)
+│   ├── dal/                  # Prisma ORM & encryption utilities
+│   │   ├── prisma/schema.prisma
+│   │   └── src/encryption.ts # AES-256-GCM content encryption
 │   ├── config/               # Shared tsup build config
 │   └── eslint-config/        # Shared ESLint rules
 │
@@ -63,19 +81,38 @@ synapse/
 - **Path aliases**: Use `@synapse/shared`, `@synapse/dal` for imports
 - **OpenAI-compatible API**: `POST /v1/chat/completions` accepts standard OpenAI request format
 - **API key auth**: Bearer tokens validated against bcrypt hashes in PostgreSQL
+- **Content encryption**: Optional AES-256-GCM encryption for prompt/response logging
+- **Shared Header component**: Dashboard pages use `<Header>` component for consistent layout
 
 ### Database Models (Prisma)
 
 - **ApiKey**: Stores hashed API keys with rate limits, expiry, multi-tenant userId
-- **RequestLog**: Tracks every request (provider, model, tokens, latency, cached status)
+- **RequestLog**: Tracks every request with:
+  - Provider, model, status code, latency
+  - Token breakdown (inputTokens, outputTokens, totalTokens)
+  - Encrypted content (promptContent, responseContent with IV and auth tag)
+  - Cache tracking (cached, cacheType, cacheTtl, costSaving, latencySaving)
+
+### Admin API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/api-keys` | GET/POST | List/create API keys |
+| `/admin/api-keys/:id` | GET/PATCH/DELETE | Manage single API key |
+| `/admin/providers` | GET | List available LLM providers |
+| `/admin/logs` | GET | List request logs (paginated, filterable) |
+| `/admin/logs/:id` | GET | Get single log with decrypted content |
+| `/admin/logs/analytics` | GET | Aggregated stats for charts |
 
 ## Tech Stack
 
 - **Runtime**: Node.js 20+, TypeScript 5.7, ESM modules
 - **Framework**: Hono with @hono/node-server
+- **Dashboard**: Next.js 14 with App Router
 - **AI SDKs**: Vercel AI SDK (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`)
 - **ORM**: Prisma 7.4 with PostgreSQL
 - **Caching**: ioredis
+- **Charts**: Recharts (dashboard analytics)
 - **Build**: tsup (esbuild-based), pnpm workspaces
 - **Validation**: Zod schemas
 
@@ -86,7 +123,15 @@ Copy `.env.example` and configure:
 - `DATABASE_URL` - PostgreSQL connection string
 - `REDIS_URL` - Redis connection string (optional)
 - `PORT` - Gateway port (default 3000)
+- `ENCRYPTION_KEY` - 32 bytes, base64 encoded for content encryption (optional)
+  ```bash
+  # Generate with:
+  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
 
 ## Important Notes
 
 - **Package Manager**: This project uses pnpm exclusively. Always use `pnpm` or `pnpx` instead of `npm`/`npx`.
+- **Use Latest Packages**: When installing new dependencies, always use `@latest` tag (e.g., `pnpm add package@latest`) unless there's a specific compatibility issue.
+- **Dashboard Layout**: All dashboard pages should use the shared `<Header>` component and wrap content in `<div className="flex-1 p-6">` for consistent styling.
+- **Prisma Changes**: After modifying `schema.prisma`, run `pnpm --filter @synapse/dal db:migrate` and `pnpm --filter @synapse/dal db:generate`.

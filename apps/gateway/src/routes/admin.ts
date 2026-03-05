@@ -1,15 +1,21 @@
 import { Hono } from 'hono';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcrypt';
-import { prisma } from '@synapse/dal';
+import { prisma, decryptContent } from '@synapse/dal';
 import {
     createApiKeySchema,
     updateApiKeySchema,
+    logsQuerySchema,
+    analyticsQuerySchema,
     HTTP_STATUS,
     type ApiKeyResponse,
     type ApiKeyCreatedResponse,
     type ApiKeyListResponse,
     type ProvidersResponse,
+    type RequestLogItem,
+    type RequestLogDetail,
+    type RequestLogListResponse,
+    type AnalyticsResponse,
 } from '@synapse/shared';
 import { providerConfig, type ProviderName } from '../config/providers.js';
 import { providerRegistry } from '../services/provider-registry.js';
@@ -246,6 +252,357 @@ admin.get('/providers', (c) => {
     }));
 
     const response: ProvidersResponse = { providers };
+    return c.json(response);
+});
+
+// GET /admin/logs - List request logs with pagination and filters
+admin.get('/logs', async (c) => {
+    const queryParams = {
+        page: c.req.query('page'),
+        limit: c.req.query('limit'),
+        provider: c.req.query('provider'),
+        model: c.req.query('model'),
+        cached: c.req.query('cached'),
+        startDate: c.req.query('startDate'),
+        endDate: c.req.query('endDate'),
+        apiKeyId: c.req.query('apiKeyId'),
+    };
+
+    const parsed = logsQuerySchema.safeParse(queryParams);
+    if (!parsed.success) {
+        return c.json(
+            {
+                error: 'Validation Error',
+                message: 'Invalid query parameters',
+                details: parsed.error.flatten().fieldErrors,
+            },
+            HTTP_STATUS.BAD_REQUEST
+        );
+    }
+
+    const { page, limit, provider, model, cached, startDate, endDate, apiKeyId } = parsed.data;
+
+    // Build where clause
+    const where: Record<string, unknown> = {};
+    if (provider) where.provider = provider;
+    if (model) where.model = model;
+    if (cached !== undefined) where.cached = cached === 'true';
+    if (apiKeyId) where.apiKeyId = apiKeyId;
+    if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) (where.createdAt as Record<string, Date>).gte = new Date(startDate);
+        if (endDate) (where.createdAt as Record<string, Date>).lte = new Date(endDate);
+    }
+
+    const [logs, total] = await Promise.all([
+        prisma.requestLog.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+            select: {
+                id: true,
+                apiKeyId: true,
+                provider: true,
+                model: true,
+                inputTokens: true,
+                outputTokens: true,
+                totalTokens: true,
+                cached: true,
+                cacheType: true,
+                cacheTtl: true,
+                costSaving: true,
+                latencySaving: true,
+                latency: true,
+                statusCode: true,
+                createdAt: true,
+            },
+        }),
+        prisma.requestLog.count({ where }),
+    ]);
+
+    const response: RequestLogListResponse = {
+        data: logs.map((log): RequestLogItem => ({
+            id: log.id,
+            apiKeyId: log.apiKeyId,
+            provider: log.provider,
+            model: log.model,
+            inputTokens: log.inputTokens,
+            outputTokens: log.outputTokens,
+            totalTokens: log.totalTokens,
+            cached: log.cached,
+            cacheType: log.cacheType as RequestLogItem['cacheType'],
+            cacheTtl: log.cacheTtl,
+            costSaving: log.costSaving,
+            latencySaving: log.latencySaving,
+            latency: log.latency,
+            statusCode: log.statusCode,
+            createdAt: log.createdAt.toISOString(),
+        })),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+    };
+
+    return c.json(response);
+});
+
+// GET /admin/logs/analytics - Get aggregated analytics data
+admin.get('/logs/analytics', async (c) => {
+    const queryParams = {
+        range: c.req.query('range') || '24h',
+    };
+
+    const parsed = analyticsQuerySchema.safeParse(queryParams);
+    if (!parsed.success) {
+        return c.json(
+            {
+                error: 'Validation Error',
+                message: 'Invalid query parameters',
+                details: parsed.error.flatten().fieldErrors,
+            },
+            HTTP_STATUS.BAD_REQUEST
+        );
+    }
+
+    const { range } = parsed.data;
+
+    // Calculate date range
+    const now = new Date();
+    const startDate = new Date();
+    switch (range) {
+        case '15m':
+            startDate.setMinutes(startDate.getMinutes() - 15);
+            break;
+        case '1h':
+            startDate.setHours(startDate.getHours() - 1);
+            break;
+        case '24h':
+            startDate.setHours(startDate.getHours() - 24);
+            break;
+        case '7d':
+            startDate.setDate(startDate.getDate() - 7);
+            break;
+        case '30d':
+            startDate.setDate(startDate.getDate() - 30);
+            break;
+    }
+
+    const where = {
+        createdAt: { gte: startDate, lte: now },
+    };
+
+    // Get all logs in range for aggregation
+    const logs = await prisma.requestLog.findMany({
+        where,
+        select: {
+            provider: true,
+            model: true,
+            inputTokens: true,
+            outputTokens: true,
+            totalTokens: true,
+            cached: true,
+            latency: true,
+            createdAt: true,
+        },
+    });
+
+    const totalRequests = logs.length;
+    const cachedRequests = logs.filter(l => l.cached).length;
+    const cacheHitRate = totalRequests > 0 ? (cachedRequests / totalRequests) * 100 : 0;
+
+    const uniqueProviders = new Set(logs.map(l => l.provider)).size;
+    const uniqueModels = new Set(logs.map(l => l.model)).size;
+
+    const latencies = logs.filter(l => l.latency !== null).map(l => l.latency!);
+    const avgLatency = latencies.length > 0
+        ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+        : null;
+
+    const totalInputTokens = logs.reduce((sum, l) => sum + (l.inputTokens || 0), 0);
+    const totalOutputTokens = logs.reduce((sum, l) => sum + (l.outputTokens || 0), 0);
+    const totalTokens = logs.reduce((sum, l) => sum + (l.totalTokens || 0), 0);
+
+    // Provider stats
+    const providerCounts = logs.reduce((acc, l) => {
+        acc[l.provider] = (acc[l.provider] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    const providerStats = Object.entries(providerCounts).map(([provider, count]) => ({
+        provider,
+        count,
+        percentage: totalRequests > 0 ? (count / totalRequests) * 100 : 0,
+    }));
+
+    // Model stats
+    const modelData = logs.reduce((acc, l) => {
+        const key = `${l.provider}:${l.model}`;
+        if (!acc[key]) {
+            acc[key] = { provider: l.provider, model: l.model, count: 0, latencies: [] as number[] };
+        }
+        acc[key].count++;
+        if (l.latency !== null) acc[key].latencies.push(l.latency);
+        return acc;
+    }, {} as Record<string, { provider: string; model: string; count: number; latencies: number[] }>);
+
+    const modelStats = Object.values(modelData).map(m => ({
+        model: m.model,
+        provider: m.provider,
+        count: m.count,
+        avgLatency: m.latencies.length > 0
+            ? m.latencies.reduce((a, b) => a + b, 0) / m.latencies.length
+            : null,
+    }));
+
+    // Token usage over time (group by minute, hour, or day depending on range)
+    const getTimeKey = (date: Date): string => {
+        if (range === '15m' || range === '1h') {
+            // Group by minute
+            return date.toISOString().slice(0, 16) + ':00Z';
+        } else if (range === '24h') {
+            // Group by hour
+            return date.toISOString().slice(0, 13) + ':00:00Z';
+        } else {
+            // Group by day
+            return date.toISOString().slice(0, 10);
+        }
+    };
+
+    const tokenUsageMap = logs.reduce((acc, l) => {
+        const key = getTimeKey(new Date(l.createdAt));
+        if (!acc[key]) {
+            acc[key] = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        }
+        acc[key].inputTokens += l.inputTokens || 0;
+        acc[key].outputTokens += l.outputTokens || 0;
+        acc[key].totalTokens += l.totalTokens || 0;
+        return acc;
+    }, {} as Record<string, { inputTokens: number; outputTokens: number; totalTokens: number }>);
+
+    const tokenUsageOverTime = Object.entries(tokenUsageMap)
+        .map(([date, tokens]) => ({ date, ...tokens }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Requests over time (time series)
+    const requestsMap = logs.reduce((acc, l) => {
+        const key = getTimeKey(new Date(l.createdAt));
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    const requestsOverTime = Object.entries(requestsMap)
+        .map(([date, count]) => ({ date, count }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Helper function to calculate percentiles
+    const calculatePercentile = (arr: number[], percentile: number): number | null => {
+        if (arr.length === 0) return null;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+        return sorted[Math.max(0, index)] ?? null;
+    };
+
+    // Latency over time with percentiles (time series)
+    const latencyByTimeMap = logs.reduce((acc, l) => {
+        if (l.latency === null) return acc;
+        const key = getTimeKey(new Date(l.createdAt));
+        if (!acc[key]) {
+            acc[key] = [];
+        }
+        acc[key].push(l.latency);
+        return acc;
+    }, {} as Record<string, number[]>);
+
+    const latencyOverTime = Object.entries(latencyByTimeMap)
+        .map(([date, latencies]) => ({
+            date,
+            p50: calculatePercentile(latencies, 50),
+            p90: calculatePercentile(latencies, 90),
+            p99: calculatePercentile(latencies, 99),
+            avg: latencies.length > 0
+                ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+                : null,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Model latency stats with percentiles
+    const modelLatencyStats = Object.values(modelData).map(m => ({
+        model: m.model,
+        provider: m.provider,
+        count: m.count,
+        p50: calculatePercentile(m.latencies, 50),
+        p90: calculatePercentile(m.latencies, 90),
+        p99: calculatePercentile(m.latencies, 99),
+        avg: m.latencies.length > 0
+            ? m.latencies.reduce((a, b) => a + b, 0) / m.latencies.length
+            : null,
+    }));
+
+    const response: AnalyticsResponse = {
+        totalRequests,
+        cacheHitRate,
+        uniqueProviders,
+        uniqueModels,
+        avgLatency,
+        totalTokens,
+        totalInputTokens,
+        totalOutputTokens,
+        providerStats,
+        modelStats,
+        tokenUsageOverTime,
+        requestsOverTime,
+        latencyOverTime,
+        modelLatencyStats,
+    };
+
+    return c.json(response);
+});
+
+// GET /admin/logs/:id - Get single log with decrypted content
+admin.get('/logs/:id', async (c) => {
+    const { id } = c.req.param();
+
+    const log = await prisma.requestLog.findUnique({
+        where: { id },
+    });
+
+    if (!log) {
+        return c.json(
+            { error: 'Not Found', message: 'Request log not found' },
+            HTTP_STATUS.NOT_FOUND
+        );
+    }
+
+    // Decrypt content if available
+    const decrypted = decryptContent(
+        log.promptContent,
+        log.responseContent,
+        log.contentIv,
+        log.contentTag
+    );
+
+    const response: RequestLogDetail = {
+        id: log.id,
+        apiKeyId: log.apiKeyId,
+        provider: log.provider,
+        model: log.model,
+        inputTokens: log.inputTokens,
+        outputTokens: log.outputTokens,
+        totalTokens: log.totalTokens,
+        cached: log.cached,
+        cacheType: log.cacheType as RequestLogDetail['cacheType'],
+        cacheTtl: log.cacheTtl,
+        costSaving: log.costSaving,
+        latencySaving: log.latencySaving,
+        latency: log.latency,
+        statusCode: log.statusCode,
+        createdAt: log.createdAt.toISOString(),
+        promptMessages: decrypted.promptMessages,
+        responseContent: decrypted.responseText,
+    };
+
     return c.json(response);
 });
 
