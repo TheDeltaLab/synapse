@@ -4,6 +4,7 @@ import { chatCompletionRequestSchema, HTTP_STATUS } from '@synapse/shared';
 import { providerRegistry } from '@synapse/services/provider-registry.js';
 import { prisma } from '@synapse/dal';
 import type { ProviderName } from '@synapse/config/providers.js';
+import { getAdapter } from '../../adapters/index.js';
 
 export async function handleChatCompletion(c: Context) {
     try {
@@ -56,10 +57,21 @@ export async function handleChatCompletion(c: Context) {
             // Log request
             logRequest(apiKey.id, provider, modelId, 200, false, Date.now() - startTime);
 
-            // Create OpenAI-compatible SSE stream
+            // Get the streaming adapter based on x-synapse-response-style header
+            const responseStyle = c.req.header('x-synapse-response-style') || 'openai';
+            const adapter = getAdapter(responseStyle);
+
+            // Create SSE stream using the adapter
             const chatId = `chatcmpl-${Date.now()}`;
             const created = Math.floor(Date.now() / 1000);
             const encoder = new TextEncoder();
+
+            const metadata = {
+                id: chatId,
+                model: modelId,
+                created,
+                index: 0,
+            };
 
             // Use TransformStream to convert text chunks to SSE format
             const { readable, writable } = new TransformStream();
@@ -69,38 +81,13 @@ export async function handleChatCompletion(c: Context) {
             (async () => {
                 try {
                     for await (const chunk of result.textStream) {
-                        const data = {
-                            id: chatId,
-                            object: 'chat.completion.chunk',
-                            created,
-                            model: modelId,
-                            choices: [
-                                {
-                                    index: 0,
-                                    delta: { content: chunk },
-                                    finish_reason: null,
-                                },
-                            ],
-                        };
-                        await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+                        const formatted = adapter.formatChunk(chunk, metadata);
+                        await writer.write(encoder.encode(formatted));
                     }
 
                     // Send final chunk with finish_reason
-                    const finalData = {
-                        id: chatId,
-                        object: 'chat.completion.chunk',
-                        created,
-                        model: modelId,
-                        choices: [
-                            {
-                                index: 0,
-                                delta: {},
-                                finish_reason: 'stop',
-                            },
-                        ],
-                    };
-                    await writer.write(encoder.encode(`data: ${JSON.stringify(finalData)}\n\n`));
-                    await writer.write(encoder.encode('data: [DONE]\n\n'));
+                    await writer.write(encoder.encode(adapter.formatFinalChunk(metadata)));
+                    await writer.write(encoder.encode(adapter.formatDone()));
                 } catch (error) {
                     console.error('Stream processing error:', error);
                     // Try to send error to client
@@ -125,11 +112,7 @@ export async function handleChatCompletion(c: Context) {
             })();
 
             return new Response(readable, {
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                },
+                headers: adapter.getResponseHeaders(),
             });
         }
 
