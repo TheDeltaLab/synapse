@@ -8,6 +8,7 @@ Usage: deploy.sh [options]
   -l, --location         Azure region
   -e, --env-name         Container Apps environment name
   -a, --app-name         Container App name
+  -i, --image            Docker image to deploy
   -d, --dry-run          Print commands without executing them (default)
   -x, --execute          Run commands instead of printing
   -h, --help             Show this help message
@@ -20,7 +21,8 @@ EOF
 RG="synapse-rg"
 LOCATION="koreacentral"
 ENV_NAME="synapse-env"
-APP_NAME="synapse-test"
+APP_NAME="synapse-gateway"
+IMAGE="ghcr.io/\${GITHUB_REPOSITORY_OWNER:-local}/synapse-gateway:nightly"
 DRY_RUN="true"
 
 while [[ $# -gt 0 ]]; do
@@ -43,6 +45,11 @@ while [[ $# -gt 0 ]]; do
     -a|--app-name)
       [[ $# -lt 2 ]] && { echo "Missing value for $1" >&2; usage; exit 1; }
       APP_NAME="$2"
+      shift 2
+      ;;
+    -i|--image)
+      [[ $# -lt 2 ]] && { echo "Missing value for $1" >&2; usage; exit 1; }
+      IMAGE="$2"
       shift 2
       ;;
     -d|--dry-run)
@@ -89,24 +96,16 @@ run_cmd az containerapp create \
   --name "$APP_NAME" \
   --resource-group "$RG" \
   --environment "$ENV_NAME" \
-  --image portkeyai/gateway:latest \
-  --target-port 8787 \
+  --image "$IMAGE" \
+  --target-port 3000 \
   --ingress external \
   --min-replicas 1 \
   --max-replicas 3 \
   --cpu 0.25 --memory 0.5Gi
 
-# 4. Create the Container App with a System-Assigned Identity
-# We start with a public image as a placeholder
-#run_cmd az containerapp create \
-#  --name $APP_NAME \
-#  --resource-group $RG \
-#  --environment $ENV_NAME \
-#  --image mcr.microsoft.com/azuredocs/containerapps-helloworld:latest \
-#  --target-port 8787 \
-#  --ingress external \
-#  --system-assigned
-
-# 5. Grant the App permission to pull from your new ACR (Managed Identity)
-#PRINCIPAL_ID=$(az containerapp identity show --name $APP_NAME --resource-group $RG --query principalId --output tsv)
-#run_cmd az role assignment create --assignee $PRINCIPAL_ID --role "AcrPull" --scope $ACR_ID
+echo ""
+echo "Deployment complete. Set environment variables with:"
+echo "  az containerapp update --name $APP_NAME --resource-group $RG --set-env-vars \\"
+echo "    DATABASE_URL=<your-database-url> \\"
+echo "    REDIS_URL=<your-redis-url> \\"
+echo "    OPENAI_API_KEY=<your-key>"

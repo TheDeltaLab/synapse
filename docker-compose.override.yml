@@ -1,0 +1,30 @@
+# Docker Compose override for local development
+# This file enables hot reload and volume mounting for development
+#
+# Usage:
+#   docker compose up          # Uses both docker-compose.yml and this file
+#   docker compose -f docker-compose.yml up  # Production mode only
+
+services:
+  gateway:
+    build:
+      target: deps  # Stop at deps stage, run with tsx
+    volumes:
+      - ./apps/gateway/src:/app/apps/gateway/src:ro
+      - ./packages/shared/src:/app/packages/shared/src:ro
+      - ./packages/dal/src:/app/packages/dal/src:ro
+    command: ["pnpm", "--filter", "gateway", "dev"]
+    environment:
+      NODE_ENV: development
+
+  dashboard:
+    build:
+      target: deps  # Stop at deps stage, run with next dev
+    volumes:
+      - ./apps/dashboard/src:/app/apps/dashboard/src:ro
+      - ./apps/dashboard/public:/app/apps/dashboard/public:ro
+      - ./packages/shared/src:/app/packages/shared/src:ro
+    command: ["pnpm", "--filter", "@synapse/dashboard", "dev"]
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_GATEWAY_URL: http://localhost:3000
