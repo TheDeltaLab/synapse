@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  key         String    @unique // bcrypt hash
+  name        String
+  userId      String?   // Optional: for multi-tenant support
+  rateLimit   Int       @default(1000) // requests per hour
+  enabled     Boolean   @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+
+  requestLogs RequestLog[]
+
+  @@index([key])
+  @@map("api_keys")
+}
+
+model RequestLog {
+  id              String    @id @default(uuid())
+  apiKeyId        String
+  apiKey          ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  provider        String    // openai, anthropic, google, etc.
+  model           String    // gpt-4o, claude-3-5-sonnet, etc.
+
+  // Enhanced token tracking
+  inputTokens     Int?
+  outputTokens    Int?
+  totalTokens     Int?      // Renamed from 'tokens'
+
+  // Encrypted content (AES-256-GCM)
+  promptContent   Bytes?    // Encrypted JSON of messages
+  responseContent Bytes?    // Encrypted response text
+  contentIv       Bytes?    // Initialization vector
+  contentTag      Bytes?    // Auth tag
+
+  // Enhanced cache tracking
+  cached          Boolean   @default(false)
+  cacheType       String?   // 'semantic', 'exact', 'none'
+  cacheTtl        Int?
+  costSaving      Float?
+  latencySaving   Int?
+
+  latency         Int?      // Milliseconds
+  statusCode      Int       // HTTP status code
+  createdAt       DateTime  @default(now())
+
+  @@index([apiKeyId, createdAt])
+  @@index([provider, model])
+  @@index([createdAt])
+  @@index([cached])
+  @@map("request_logs")
+}

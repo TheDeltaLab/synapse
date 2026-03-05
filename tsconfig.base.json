@@ -1,0 +1,56 @@
+{
+  "compilerOptions": {
+    // Type Checking
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+
+    // Module Resolution
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false,
+
+    // JavaScript Support
+    "allowJs": true,
+    "checkJs": false,
+
+    // Emit
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noEmit": false,
+    "outDir": "./dist",
+
+    // Interop Constraints
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+
+    // Language and Environment
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "jsx": "preserve",
+
+    // Skip Type Checking
+    "skipLibCheck": true,
+
+    // Path Aliases
+    "baseUrl": ".",
+    "paths": {
+      "@synapse/shared": ["./packages/shared/src/index.ts"],
+      "@synapse/shared/*": ["./packages/shared/src/*"],
+      "@synapse/dal": ["./packages/dal/src/index.ts"],
+      "@synapse/dal/*": ["./packages/dal/src/*"],
+      "@synapse/dal/prisma": ["./packages/dal/generated/prisma/index.js"],
+      "@synapse/dal/prisma/*": ["./packages/dal/generated/prisma/*"],
+      "@synapse/client-sdk": ["./packages/client-sdk/src/index.ts"],
+      "@synapse/client-sdk/*": ["./packages/client-sdk/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next", "**/*.spec.ts", "**/*.test.ts"]
+}
