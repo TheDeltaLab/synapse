@@ -1,8 +1,8 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import type { ModelStats } from '@synapse/shared';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface ModelTableProps {
     data: ModelStats[];
@@ -41,7 +41,7 @@ export function ModelTable({ data }: ModelTableProps) {
                             </tr>
                         </thead>
                         <tbody>
-                            {sortedData.map((item) => (
+                            {sortedData.map(item => (
                                 <tr key={`${item.provider}-${item.model}`} className="border-b last:border-0">
                                     <td className="px-4 py-2">
                                         <span className="text-sm font-mono">

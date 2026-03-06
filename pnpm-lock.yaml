@@ -136,12 +136,18 @@ importers:
         specifier: ^5.4.2
         version: 5.9.3
     devDependencies:
+      '@synapse/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
       '@types/bcrypt':
         specifier: ^5.0.2
         version: 5.0.2
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.12
+      eslint:
+        specifier: ^9.18.0
+        version: 9.39.3(jiti@2.6.1)
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)
@@ -201,9 +207,15 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@synapse/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.12
+      eslint:
+        specifier: ^9.18.0
+        version: 9.39.3(jiti@2.6.1)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

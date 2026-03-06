@@ -70,7 +70,6 @@ synapse/
 │   ├── config/               # Shared tsup build config
 │   └── eslint-config/        # Shared ESLint rules
 │
-├── configs/                  # Portkey JSON gateway routing configs
 └── infrastructure/           # Azure deployment scripts
 ```
 

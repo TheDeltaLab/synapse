@@ -1,9 +1,9 @@
-import type { Context } from 'hono';
 import { streamText } from 'ai';
-import { chatCompletionRequestSchema, HTTP_STATUS, type CacheType } from '@synapse/shared';
-import { providerRegistry } from '@synapse/services/provider-registry.js';
-import { prisma, encryptContent, isEncryptionConfigured } from '@synapse/dal';
+import type { Context } from 'hono';
 import type { ProviderName } from '@synapse/config/providers.js';
+import { prisma, encryptContent, isEncryptionConfigured } from '@synapse/dal';
+import { providerRegistry } from '@synapse/services/provider-registry.js';
+import { chatCompletionRequestSchema, HTTP_STATUS, type CacheType } from '@synapse/shared';
 import { getAdapter } from '../../adapters/index.js';
 
 interface LogRequestParams {
@@ -24,7 +24,7 @@ interface LogRequestParams {
     latencySaving?: number;
 }
 
-export async function handleChatCompletion(c: Context) {
+export async function handleChatCompletion(c: Context): Promise<Response> {
     try {
         // Parse and validate request body
         const body = await c.req.json();
@@ -63,12 +63,14 @@ export async function handleChatCompletion(c: Context) {
         if (request.stream) {
             const result = streamText({
                 model,
-                messages: request.messages.map(msg => ({
-                    role: msg.role,
-                    content: msg.content,
-                })),
+                messages: request.messages
+                    .filter(msg => msg.role !== 'function')
+                    .map(msg => ({
+                        role: msg.role as 'system' | 'user' | 'assistant',
+                        content: msg.content,
+                    })),
                 temperature: request.temperature,
-                maxTokens: request.max_tokens,
+                maxOutputTokens: request.max_tokens,
                 topP: request.top_p,
             });
 
@@ -158,12 +160,14 @@ export async function handleChatCompletion(c: Context) {
         // Handle non-streaming response
         const result = await streamText({
             model,
-            messages: request.messages.map(msg => ({
-                role: msg.role,
-                content: msg.content,
-            })),
+            messages: request.messages
+                .filter(msg => msg.role !== 'function')
+                .map(msg => ({
+                    role: msg.role as 'system' | 'user' | 'assistant',
+                    content: msg.content,
+                })),
             temperature: request.temperature,
-            maxTokens: request.max_tokens,
+            maxOutputTokens: request.max_tokens,
             topP: request.top_p,
         });
 
@@ -257,9 +261,13 @@ async function logRequest(params: LogRequestParams): Promise<void> {
                 inputTokens: params.inputTokens ?? null,
                 outputTokens: params.outputTokens ?? null,
                 totalTokens: params.totalTokens ?? null,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
                 promptContent: encryptedContent.promptContent,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
                 responseContent: encryptedContent.responseContent,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
                 contentIv: encryptedContent.contentIv,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
                 contentTag: encryptedContent.contentTag,
                 cached: params.cached ?? false,
                 cacheType: params.cacheType ?? null,

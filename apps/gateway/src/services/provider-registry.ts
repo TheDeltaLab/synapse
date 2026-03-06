@@ -1,7 +1,7 @@
-import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createDeepSeek } from '@ai-sdk/deepseek';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { customProvider, type LanguageModel } from 'ai';
 import { providerConfig, type ProviderName } from '../config/providers.js';
@@ -93,12 +93,13 @@ const openai = createOpenAI({
     fetch: createNormalizingFetch(),
 });
 
-const openrouter = createOpenRouter({
-  apiKey: 'YOUR_OPENROUTER_API_KEY',
-});
+// OpenRouter provider (uncomment when needed)
+// const openrouter = createOpenRouter({
+//     apiKey: process.env.OPENROUTER_API_KEY!,
+// });
 
 const deepseek = createDeepSeek({
-    apiKey: process.env.DEEP_SEEK_API_KEY!
+    apiKey: process.env.DEEP_SEEK_API_KEY!,
 });
 
 export type ModelProvider = ReturnType<typeof customProvider>;
