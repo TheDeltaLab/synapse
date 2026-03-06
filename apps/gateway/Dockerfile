@@ -62,7 +62,7 @@ RUN pnpm --filter @synapse/shared build && \
 # ============================================
 FROM base AS prod-deps
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/gateway/package.json ./apps/gateway/
 COPY apps/dashboard/package.json ./apps/dashboard/
 COPY packages/shared/package.json ./packages/shared/

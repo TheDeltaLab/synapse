@@ -45,7 +45,7 @@ COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 
 # Copy workspace files
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/dashboard/ ./apps/dashboard/
 COPY packages/shared/ ./packages/shared/
 
