@@ -43,7 +43,7 @@ COPY --from=deps /app/packages/dal/node_modules ./packages/dal/node_modules
 COPY --from=deps /app/packages/config/node_modules ./packages/config/node_modules
 
 # Copy workspace files
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/gateway/ ./apps/gateway/
 COPY packages/shared/ ./packages/shared/
 COPY packages/dal/ ./packages/dal/
@@ -62,7 +62,7 @@ RUN pnpm --filter @synapse/shared build && \
 # ============================================
 FROM base AS prod-deps
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/gateway/package.json ./apps/gateway/
 COPY apps/dashboard/package.json ./apps/dashboard/
 COPY packages/shared/package.json ./packages/shared/
