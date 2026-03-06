@@ -52,10 +52,8 @@ COPY packages/config/ ./packages/config/
 # Generate Prisma client
 RUN pnpm --filter @synapse/dal db:generate
 
-# Build shared packages first, then gateway
-RUN pnpm --filter @synapse/shared build && \
-    pnpm --filter @synapse/dal build && \
-    pnpm --filter gateway build
+# Build gateway (shared and dal packages are used directly as TypeScript source)
+RUN pnpm --filter gateway build
 
 # ============================================
 # Stage 4: Production dependencies only
