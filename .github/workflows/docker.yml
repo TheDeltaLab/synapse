@@ -32,8 +32,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # Use lowercase for OCI compliance
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+  # Use lowercase for OCI compliance - hierarchical namespace for multi-image project
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/synapse
 
 jobs:
   # Detect which apps have changed to enable selective builds
@@ -105,14 +105,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}/synapse-gateway
+          images: ${{ env.IMAGE_PREFIX }}/gateway
           tags: |
             # nightly tag for main branch pushes
             type=raw,value=nightly,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             # latest tag for releases
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            # stable tag for releases (alias for latest)
-            type=raw,value=stable,enable=${{ github.event_name == 'release' }}
             # semver tags for releases (v1.2.3, v1.2, v1)
             type=semver,pattern=v{{version}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern=v{{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
@@ -147,7 +145,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.push
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.IMAGE_PREFIX }}/synapse-gateway
+          subject-name: ${{ env.IMAGE_PREFIX }}/gateway
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
@@ -190,11 +188,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}/synapse-dashboard
+          images: ${{ env.IMAGE_PREFIX }}/dashboard
           tags: |
             type=raw,value=nightly,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=raw,value=stable,enable=${{ github.event_name == 'release' }}
             type=semver,pattern=v{{version}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern=v{{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern=v{{major}},enable=${{ github.event_name == 'release' && !startsWith(github.ref, 'refs/tags/v0.') }}
@@ -227,7 +224,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.push
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.IMAGE_PREFIX }}/synapse-dashboard
+          subject-name: ${{ env.IMAGE_PREFIX }}/dashboard
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
@@ -266,8 +263,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Quick Start" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_PREFIX }}/synapse-gateway:nightly" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_PREFIX }}/synapse-dashboard:nightly" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_PREFIX }}/gateway:nightly" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_PREFIX }}/dashboard:nightly" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if any build failed

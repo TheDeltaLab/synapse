@@ -43,7 +43,7 @@ COPY --from=deps /app/packages/dal/node_modules ./packages/dal/node_modules
 COPY --from=deps /app/packages/config/node_modules ./packages/config/node_modules
 
 # Copy workspace files
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/gateway/ ./apps/gateway/
 COPY packages/shared/ ./packages/shared/
 COPY packages/dal/ ./packages/dal/
@@ -52,17 +52,15 @@ COPY packages/config/ ./packages/config/
 # Generate Prisma client
 RUN pnpm --filter @synapse/dal db:generate
 
-# Build shared packages first, then gateway
-RUN pnpm --filter @synapse/shared build && \
-    pnpm --filter @synapse/dal build && \
-    pnpm --filter gateway build
+# Build gateway (shared and dal packages are used directly as TypeScript source)
+RUN pnpm --filter gateway build
 
 # ============================================
 # Stage 4: Production dependencies only
 # ============================================
 FROM base AS prod-deps
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/gateway/package.json ./apps/gateway/
 COPY apps/dashboard/package.json ./apps/dashboard/
 COPY packages/shared/package.json ./packages/shared/
@@ -87,24 +85,17 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 synapse && \
     adduser --system --uid 1001 --ingroup synapse synapse
 
-# Copy production node_modules
+# Copy production node_modules (only gateway deps needed, workspace packages are bundled)
 COPY --from=prod-deps --chown=synapse:synapse /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/apps/gateway/node_modules ./apps/gateway/node_modules
-COPY --from=prod-deps --chown=synapse:synapse /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=prod-deps --chown=synapse:synapse /app/packages/dal/node_modules ./packages/dal/node_modules
 
-# Copy built application
+# Copy built application (workspace packages are bundled by tsup)
 COPY --from=builder --chown=synapse:synapse /app/apps/gateway/dist ./apps/gateway/dist
 COPY --from=builder --chown=synapse:synapse /app/apps/gateway/package.json ./apps/gateway/
-COPY --from=builder --chown=synapse:synapse /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder --chown=synapse:synapse /app/packages/shared/package.json ./packages/shared/
-COPY --from=builder --chown=synapse:synapse /app/packages/dal/dist ./packages/dal/dist
-COPY --from=builder --chown=synapse:synapse /app/packages/dal/package.json ./packages/dal/
 
-# Copy Prisma schema and generated client
+# Copy Prisma schema and generated client (needed at runtime for Prisma)
 COPY --from=builder --chown=synapse:synapse /app/packages/dal/prisma ./packages/dal/prisma
-COPY --from=builder --chown=synapse:synapse /app/node_modules/.pnpm/@prisma+client*/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=synapse:synapse /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder --chown=synapse:synapse /app/packages/dal/generated ./packages/dal/generated
 
 # Copy root package.json and pnpm-workspace.yaml for workspace resolution
 COPY --chown=synapse:synapse package.json pnpm-workspace.yaml ./

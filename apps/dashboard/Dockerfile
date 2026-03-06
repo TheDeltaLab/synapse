@@ -49,9 +49,8 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/dashboard/ ./apps/dashboard/
 COPY packages/shared/ ./packages/shared/
 
-# Build shared packages first, then dashboard
-RUN pnpm --filter @synapse/shared build && \
-    pnpm --filter @synapse/dashboard build
+# Build dashboard (shared package is used directly as TypeScript source)
+RUN pnpm --filter @synapse/dashboard build
 
 # ============================================
 # Stage 4: Production runner
@@ -67,7 +66,6 @@ RUN addgroup --system --gid 1001 nextjs && \
 # Copy standalone output
 COPY --from=builder --chown=nextjs:nextjs /app/apps/dashboard/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
-COPY --from=builder --chown=nextjs:nextjs /app/apps/dashboard/public ./apps/dashboard/public
 
 USER nextjs
 

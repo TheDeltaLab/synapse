@@ -38,7 +38,7 @@ jobs:
       - name: Deploy Gateway to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ghcr.io/${{ github.repository_owner }}/synapse-gateway:${{ steps.tag.outputs.tag }}
+          imageToDeploy: ghcr.io/${{ github.repository_owner }}/synapse/gateway:${{ steps.tag.outputs.tag }}
           containerAppName: synapse-gateway
           resourceGroup: synapse-rg
           envVars: |
@@ -72,7 +72,7 @@ jobs:
       - name: Deploy Dashboard to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ghcr.io/${{ github.repository_owner }}/synapse-dashboard:${{ steps.tag.outputs.tag }}
+          imageToDeploy: ghcr.io/${{ github.repository_owner }}/synapse/dashboard:${{ steps.tag.outputs.tag }}
           containerAppName: synapse-dashboard
           resourceGroup: synapse-rg
           envVars: |
