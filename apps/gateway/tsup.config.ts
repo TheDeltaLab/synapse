@@ -9,4 +9,6 @@ export default defineConfig({
     clean: true,
     target: 'node20',
     outDir: 'dist',
+    // Bundle workspace packages since they export TypeScript directly
+    noExternal: ['@synapse/shared', '@synapse/dal', '@synapse/config'],
 });
