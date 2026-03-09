@@ -26,7 +26,8 @@
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.2",
-    "@prisma/client": "^7.4.1"
+    "@prisma/client": "^7.4.1",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.12",

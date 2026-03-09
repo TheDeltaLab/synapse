@@ -32,8 +32,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # Use lowercase for OCI compliance - hierarchical namespace for multi-image project
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/synapse
 
 jobs:
   # Detect which apps have changed to enable selective builds
@@ -43,9 +41,17 @@ jobs:
     outputs:
       gateway: ${{ steps.filter.outputs.gateway }}
       dashboard: ${{ steps.filter.outputs.dashboard }}
+      image_prefix: ${{ steps.image.outputs.prefix }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set image prefix (lowercase for OCI compliance)
+        id: image
+        run: |
+          # GitHub repository owner may contain uppercase, but OCI requires lowercase
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "prefix=ghcr.io/${OWNER_LC}/synapse" >> $GITHUB_OUTPUT
 
       - name: Check for changes
         uses: dorny/paths-filter@v3
@@ -105,7 +111,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}/gateway
+          images: ${{ needs.changes.outputs.image_prefix }}/gateway
           tags: |
             # nightly tag for main branch pushes
             type=raw,value=nightly,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -145,7 +151,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.push
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.IMAGE_PREFIX }}/gateway
+          subject-name: ${{ needs.changes.outputs.image_prefix }}/gateway
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
@@ -188,7 +194,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}/dashboard
+          images: ${{ needs.changes.outputs.image_prefix }}/dashboard
           tags: |
             type=raw,value=nightly,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
@@ -224,7 +230,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.push
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.IMAGE_PREFIX }}/dashboard
+          subject-name: ${{ needs.changes.outputs.image_prefix }}/dashboard
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
@@ -263,8 +269,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Quick Start" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_PREFIX }}/gateway:nightly" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_PREFIX }}/dashboard:nightly" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ needs.changes.outputs.image_prefix }}/gateway:nightly" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ needs.changes.outputs.image_prefix }}/dashboard:nightly" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if any build failed
