@@ -47,19 +47,21 @@ synapse/
 │   │   │   ├── routes/v1/    # API endpoints (chat.ts)
 │   │   │   ├── routes/admin.ts # Admin API (api-keys, logs, analytics)
 │   │   │   └── services/     # Provider registry, auth service
+│   │   └── Dockerfile        # Multi-stage Docker build
 │   │
 │   └── dashboard/            # Next.js admin dashboard (port 3001)
-│       └── src/
-│           ├── app/(dashboard)/  # Dashboard pages
-│           │   ├── playground/   # Interactive chat testing
-│           │   ├── api-keys/     # API key management
-│           │   ├── logs/         # Request logs table
-│           │   └── logs/analytics/ # Analytics charts
-│           ├── components/       # UI components
-│           │   ├── layout/       # Sidebar, Header
-│           │   ├── analytics/    # Chart components
-│           │   └── logs/         # Log table, filters, detail dialog
-│           └── lib/gateway.ts    # Gateway API client
+│       ├── src/
+│       │   ├── app/(dashboard)/  # Dashboard pages
+│       │   │   ├── playground/   # Interactive chat testing
+│       │   │   ├── api-keys/     # API key management
+│       │   │   ├── logs/         # Request logs table
+│       │   │   └── logs/analytics/ # Analytics charts
+│       │   ├── components/       # UI components
+│       │   │   ├── layout/       # Sidebar, Header
+│       │   │   ├── analytics/    # Chart components
+│       │   │   └── logs/         # Log table, filters, detail dialog
+│       │   └── lib/gateway.ts    # Gateway API client
+│       └── Dockerfile        # Multi-stage Docker build (standalone)
 │
 ├── packages/
 │   ├── shared/               # Types, Zod schemas, utilities
@@ -69,6 +71,9 @@ synapse/
 │   │   └── src/encryption.ts # AES-256-GCM content encryption
 │   ├── config/               # Shared tsup build config
 │   └── eslint-config/        # Shared ESLint rules
+│
+├── docs/                     # Documentation
+│   └── AZURE_OIDC_SETUP.md   # Azure OIDC authentication setup
 │
 └── infrastructure/           # Azure deployment scripts
 ```
@@ -134,3 +139,46 @@ Copy `.env.example` and configure:
 - **Use Latest Packages**: When installing new dependencies, always use `@latest` tag (e.g., `pnpm add package@latest`) unless there's a specific compatibility issue.
 - **Dashboard Layout**: All dashboard pages should use the shared `<Header>` component and wrap content in `<div className="flex-1 p-6">` for consistent styling.
 - **Prisma Changes**: After modifying `schema.prisma`, run `pnpm --filter @synapse/dal db:migrate` and `pnpm --filter @synapse/dal db:generate`.
+
+## CI/CD
+
+### GitHub Actions Workflows
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| `ci.yml` | PRs, pushes to main | Lint, type-check, build |
+| `docker.yml` | Pushes to main, releases | Build & push images to GHCR |
+| `release.yml` | Pushes to main | Release-please automation |
+| `deploy-azure.yml` | After Docker, manual | Deploy to Azure Container Apps |
+
+### Docker Images
+
+Images are published to GitHub Container Registry:
+- `ghcr.io/{owner}/synapse/gateway:nightly` - Latest main branch
+- `ghcr.io/{owner}/synapse/gateway:latest` - Latest release
+- `ghcr.io/{owner}/synapse/gateway:v1.2.3` - Specific version
+
+```bash
+# Build locally
+docker build -f apps/gateway/Dockerfile -t synapse-gateway .
+docker build -f apps/dashboard/Dockerfile -t synapse-dashboard .
+
+# Run with Docker Compose
+docker compose up
+```
+
+### Azure Deployment
+
+Uses OIDC authentication (no stored secrets). Three environments: `test`, `staging`, `production`.
+
+**Required GitHub Variables (repository level):**
+- `AZURE_CLIENT_ID` - Azure AD Application ID
+- `AZURE_TENANT_ID` - Azure AD Tenant ID
+
+**Required GitHub Variables (per environment):**
+- `AZURE_SUBSCRIPTION_ID` - Azure Subscription ID (can differ per environment)
+- `GATEWAY_URL` - Gateway URL for health checks
+- `DASHBOARD_URL` - Dashboard URL for health checks
+
+See `docs/AZURE_OIDC_SETUP.md` for full setup instructions.
+

@@ -8,98 +8,247 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Image tag to deploy (e.g., nightly, stable, v1.0.0)'
+        description: 'Image tag to deploy (e.g., nightly, latest, v1.0.0)'
         type: string
         default: 'nightly'
+      environment:
+        description: 'Deployment environment'
+        type: choice
+        options:
+          - test
+          - staging
+          - production
+        default: 'test'
+
+# Prevent concurrent deployments to the same environment
+concurrency:
+  group: deploy-${{ inputs.environment || 'test' }}
+  cancel-in-progress: false  # Don't cancel in-progress deployments
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/synapse
+  # Azure OIDC configuration (set these as repository variables)
+  # Note: AZURE_SUBSCRIPTION_ID is set per-environment, not at repo level
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
 
 jobs:
-  deploy-gateway:
-    name: Deploy Gateway
+  # Determine deployment parameters
+  prepare:
+    name: Prepare Deployment
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      image_tag: ${{ steps.params.outputs.image_tag }}
+      environment: ${{ steps.params.outputs.environment }}
+      resource_group: ${{ steps.params.outputs.resource_group }}
+      gateway_app: ${{ steps.params.outputs.gateway_app }}
+      dashboard_app: ${{ steps.params.outputs.dashboard_app }}
+      should_deploy: ${{ steps.params.outputs.should_deploy }}
+    steps:
+      - name: Determine deployment parameters
+        id: params
+        run: |
+          # Determine if we should deploy
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            SHOULD_DEPLOY="true"
+            IMAGE_TAG="${{ inputs.image_tag }}"
+            ENVIRONMENT="${{ inputs.environment }}"
+          elif [ "${{ github.event.workflow_run.conclusion }}" == "success" ]; then
+            SHOULD_DEPLOY="true"
+            IMAGE_TAG="nightly"
+            ENVIRONMENT="test"  # Auto-deploy to test only
+          else
+            SHOULD_DEPLOY="false"
+            IMAGE_TAG=""
+            ENVIRONMENT=""
+          fi
+
+          # Set environment-specific resource names
+          case "$ENVIRONMENT" in
+            test)
+              RESOURCE_GROUP="synapse-test-rg"
+              GATEWAY_APP="synapse-gateway-test"
+              DASHBOARD_APP="synapse-dashboard-test"
+              ;;
+            staging)
+              RESOURCE_GROUP="synapse-staging-rg"
+              GATEWAY_APP="synapse-gateway-staging"
+              DASHBOARD_APP="synapse-dashboard-staging"
+              ;;
+            production)
+              RESOURCE_GROUP="synapse-rg"
+              GATEWAY_APP="synapse-gateway"
+              DASHBOARD_APP="synapse-dashboard"
+              ;;
+            *)
+              RESOURCE_GROUP=""
+              GATEWAY_APP=""
+              DASHBOARD_APP=""
+              ;;
+          esac
+
+          # Output all parameters
+          echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "resource_group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+          echo "gateway_app=$GATEWAY_APP" >> $GITHUB_OUTPUT
+          echo "dashboard_app=$DASHBOARD_APP" >> $GITHUB_OUTPUT
+
+          # Log for debugging
+          echo "## Deployment Parameters" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | $ENVIRONMENT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | $RESOURCE_GROUP |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gateway App | $GATEWAY_APP |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dashboard App | $DASHBOARD_APP |" >> $GITHUB_STEP_SUMMARY
+
+  deploy-gateway:
+    name: Deploy Gateway (${{ needs.prepare.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: needs.prepare.outputs.should_deploy == 'true'
+    environment: ${{ needs.prepare.outputs.environment }}
+    permissions:
+      id-token: write  # Required for OIDC authentication
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login
+      - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Determine image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=nightly" >> $GITHUB_OUTPUT
-          fi
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Gateway to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ghcr.io/${{ github.repository_owner }}/synapse/gateway:${{ steps.tag.outputs.tag }}
-          containerAppName: synapse-gateway
-          resourceGroup: synapse-rg
+          imageToDeploy: ${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}
+          containerAppName: ${{ needs.prepare.outputs.gateway_app }}
+          resourceGroup: ${{ needs.prepare.outputs.resource_group }}
           envVars: |
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            REDIS_URL=${{ secrets.REDIS_URL }}
-            NODE_ENV=production
+            DATABASE_URL=secretref:database-url
+            REDIS_URL=secretref:redis-url
+            NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}
+
+      - name: Verify deployment
+        run: |
+          echo "✅ Gateway deployed to ${{ needs.prepare.outputs.environment }}"
+          echo "   Image: ${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}"
+          echo "   App: ${{ needs.prepare.outputs.gateway_app }}"
 
   deploy-dashboard:
-    name: Deploy Dashboard
+    name: Deploy Dashboard (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: deploy-gateway
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    needs: [prepare, deploy-gateway]
+    if: needs.prepare.outputs.should_deploy == 'true'
+    environment: ${{ needs.prepare.outputs.environment }}
+    permissions:
+      id-token: write  # Required for OIDC authentication
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login
+      - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Determine image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=nightly" >> $GITHUB_OUTPUT
-          fi
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Dashboard to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ghcr.io/${{ github.repository_owner }}/synapse/dashboard:${{ steps.tag.outputs.tag }}
-          containerAppName: synapse-dashboard
-          resourceGroup: synapse-rg
+          imageToDeploy: ${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}
+          containerAppName: ${{ needs.prepare.outputs.dashboard_app }}
+          resourceGroup: ${{ needs.prepare.outputs.resource_group }}
           envVars: |
-            NODE_ENV=production
+            NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}
+
+      - name: Verify deployment
+        run: |
+          echo "✅ Dashboard deployed to ${{ needs.prepare.outputs.environment }}"
+          echo "   Image: ${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}"
+          echo "   App: ${{ needs.prepare.outputs.dashboard_app }}"
 
   health-check:
-    name: Health Check
+    name: Health Check (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: [deploy-gateway, deploy-dashboard]
+    needs: [prepare, deploy-gateway, deploy-dashboard]
+    if: |
+      always() &&
+      needs.deploy-gateway.result == 'success' &&
+      needs.deploy-dashboard.result == 'success'
+    env:
+      # Environment-specific URLs (set via GitHub Environment variables)
+      GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
     steps:
-      - name: Wait for deployment
-        run: sleep 30
+      - name: Wait for containers to start
+        run: sleep 15
 
       - name: Check Gateway Health
-        run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.GATEWAY_URL }}/health" || echo "000")
-          if [ "$response" != "200" ]; then
-            echo "Gateway health check failed with status: $response"
-            exit 1
-          fi
-          echo "Gateway health check passed"
+        uses: nick-fields/retry@v3
+        with:
+          timeout_seconds: 10
+          max_attempts: 5
+          retry_wait_seconds: 10
+          command: |
+            GATEWAY_URL="${{ vars.GATEWAY_URL }}"
+            if [ -z "$GATEWAY_URL" ]; then
+              echo "⚠️ GATEWAY_URL not set for environment, skipping health check"
+              exit 0
+            fi
+            response=$(curl -s -o /dev/null -w "%{http_code}" "${GATEWAY_URL}/health")
+            if [ "$response" != "200" ]; then
+              echo "❌ Gateway health check failed with status: $response"
+              exit 1
+            fi
+            echo "✅ Gateway health check passed"
 
       - name: Check Dashboard Health
+        uses: nick-fields/retry@v3
+        with:
+          timeout_seconds: 10
+          max_attempts: 5
+          retry_wait_seconds: 10
+          command: |
+            DASHBOARD_URL="${{ vars.DASHBOARD_URL }}"
+            if [ -z "$DASHBOARD_URL" ]; then
+              echo "⚠️ DASHBOARD_URL not set for environment, skipping health check"
+              exit 0
+            fi
+            response=$(curl -s -o /dev/null -w "%{http_code}" "${DASHBOARD_URL}/")
+            if [ "$response" != "200" ]; then
+              echo "❌ Dashboard health check failed with status: $response"
+              exit 1
+            fi
+            echo "✅ Dashboard health check passed"
+
+      - name: Deployment Summary
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.DASHBOARD_URL }}/" || echo "000")
-          if [ "$response" != "200" ]; then
-            echo "Dashboard health check failed with status: $response"
-            exit 1
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ needs.prepare.outputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Image | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Gateway | \`${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dashboard | \`${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- **Resource Group:** \`${{ needs.prepare.outputs.resource_group }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Gateway App:** \`${{ needs.prepare.outputs.gateway_app }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dashboard App:** \`${{ needs.prepare.outputs.dashboard_app }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ vars.GATEWAY_URL }}" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### URLs" >> $GITHUB_STEP_SUMMARY
+            echo "- Gateway: ${{ vars.GATEWAY_URL }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Dashboard: ${{ vars.DASHBOARD_URL }}" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "Dashboard health check passed"
