@@ -19,6 +19,10 @@ on:
           - staging
           - production
         default: 'test'
+      location:
+        description: 'Azure region for deployment'
+        type: string
+        default: 'koreacentral'
 
 # Prevent concurrent deployments to the same environment
 concurrency:
@@ -44,6 +48,7 @@ jobs:
       dashboard_app: ${{ steps.params.outputs.dashboard_app }}
       should_deploy: ${{ steps.params.outputs.should_deploy }}
       image_prefix: ${{ steps.params.outputs.image_prefix }}
+      location: ${{ steps.params.outputs.location }}
     steps:
       - name: Determine deployment parameters
         id: params
@@ -57,14 +62,17 @@ jobs:
             SHOULD_DEPLOY="true"
             IMAGE_TAG="${{ inputs.image_tag }}"
             ENVIRONMENT="${{ inputs.environment }}"
+            LOCATION="${{ inputs.location }}"
           elif [ "${{ github.event.workflow_run.conclusion }}" == "success" ]; then
             SHOULD_DEPLOY="true"
             IMAGE_TAG="nightly"
             ENVIRONMENT="test"  # Auto-deploy to test only
+            LOCATION="koreacentral"  # Default location for auto-deploy
           else
             SHOULD_DEPLOY="false"
             IMAGE_TAG=""
             ENVIRONMENT=""
+            LOCATION=""
           fi
 
           # Set environment-specific resource names
@@ -99,12 +107,14 @@ jobs:
           echo "gateway_app=$GATEWAY_APP" >> $GITHUB_OUTPUT
           echo "dashboard_app=$DASHBOARD_APP" >> $GITHUB_OUTPUT
           echo "image_prefix=$IMAGE_PREFIX" >> $GITHUB_OUTPUT
+          echo "location=$LOCATION" >> $GITHUB_OUTPUT
 
           # Log for debugging
           echo "## Deployment Parameters" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Environment | $ENVIRONMENT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Location | $LOCATION |" >> $GITHUB_STEP_SUMMARY
           echo "| Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
           echo "| Image Prefix | $IMAGE_PREFIX |" >> $GITHUB_STEP_SUMMARY
           echo "| Resource Group | $RESOURCE_GROUP |" >> $GITHUB_STEP_SUMMARY
@@ -132,15 +142,15 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Gateway to Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}
-          containerAppName: ${{ needs.prepare.outputs.gateway_app }}
-          resourceGroup: ${{ needs.prepare.outputs.resource_group }}
-          environmentVariables: |
-            DATABASE_URL=secretref:database-url
-            REDIS_URL=secretref:redis-url
-            NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}
+        run: |
+          az containerapp update \
+            --name ${{ needs.prepare.outputs.gateway_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --image ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }} \
+            --set-env-vars \
+              "DATABASE_URL=secretref:database-url" \
+              "REDIS_URL=secretref:redis-url" \
+              "NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}"
 
       - name: Verify deployment
         run: |
@@ -169,13 +179,20 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Dashboard to Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}
-          containerAppName: ${{ needs.prepare.outputs.dashboard_app }}
-          resourceGroup: ${{ needs.prepare.outputs.resource_group }}
-          environmentVariables: |
-            NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}
+        run: |
+          # Update the container app with new image and correct target port (3001)
+          az containerapp update \
+            --name ${{ needs.prepare.outputs.dashboard_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --image ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }} \
+            --set-env-vars \
+              "NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}"
+
+          # Ensure ingress is configured for port 3001
+          az containerapp ingress update \
+            --name ${{ needs.prepare.outputs.dashboard_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --target-port 3001
 
       - name: Verify deployment
         run: |
@@ -250,6 +267,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Resources" >> $GITHUB_STEP_SUMMARY
           echo "- **Resource Group:** \`${{ needs.prepare.outputs.resource_group }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Location:** \`${{ needs.prepare.outputs.location }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Gateway App:** \`${{ needs.prepare.outputs.gateway_app }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Dashboard App:** \`${{ needs.prepare.outputs.dashboard_app }}\`" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ vars.GATEWAY_URL }}" ]; then
