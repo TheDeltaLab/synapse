@@ -255,9 +255,9 @@ ask_confirm() {
         return 0
     fi
 
-    # Interactive mode: ask user
+    # Interactive mode: ask user (read from terminal explicitly)
     echo -e -n "${YELLOW}$prompt (y/n):${NC} "
-    read -r response
+    read -r response < /dev/tty
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
@@ -350,7 +350,7 @@ if [ -n "$SP_OBJECT_ID" ]; then
 
         # Ask for subscription if not set
         echo -e "Enter subscription ID/name for '$ENV' environment (or press Enter to skip):"
-        read -r SUB_INPUT
+        read -r SUB_INPUT < /dev/tty
 
         if [ -z "$SUB_INPUT" ]; then
             print_warn "Skipping $ENV environment"
@@ -374,7 +374,7 @@ if [ -n "$SP_OBJECT_ID" ]; then
 
             if ask_confirm "Would you like to create it?"; then
                 echo "Enter location (e.g., eastus, westeurope):"
-                read -r LOCATION
+                read -r LOCATION < /dev/tty
                 az group create --name "$RG" --location "$LOCATION" &>/dev/null
                 print_fixed "Created resource group: $RG"
             else
@@ -431,7 +431,7 @@ if [ -n "$APP_ID" ]; then
     # Get GitHub org if not set
     if [ -z "$GITHUB_ORG" ]; then
         echo "Enter your GitHub organization/username:"
-        read -r GITHUB_ORG
+        read -r GITHUB_ORG < /dev/tty
     fi
 
     print_check "Checking federated credentials for $GITHUB_ORG/$GITHUB_REPO..."

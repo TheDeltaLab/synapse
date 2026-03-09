@@ -26,7 +26,6 @@ concurrency:
   cancel-in-progress: false  # Don't cancel in-progress deployments
 
 env:
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/synapse
   # Azure OIDC configuration (set these as repository variables)
   # Note: AZURE_SUBSCRIPTION_ID is set per-environment, not at repo level
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -44,10 +43,15 @@ jobs:
       gateway_app: ${{ steps.params.outputs.gateway_app }}
       dashboard_app: ${{ steps.params.outputs.dashboard_app }}
       should_deploy: ${{ steps.params.outputs.should_deploy }}
+      image_prefix: ${{ steps.params.outputs.image_prefix }}
     steps:
       - name: Determine deployment parameters
         id: params
         run: |
+          # GitHub repository owner may contain uppercase, but OCI requires lowercase
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_PREFIX="ghcr.io/${OWNER_LC}/synapse"
+
           # Determine if we should deploy
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             SHOULD_DEPLOY="true"
@@ -94,6 +98,7 @@ jobs:
           echo "resource_group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
           echo "gateway_app=$GATEWAY_APP" >> $GITHUB_OUTPUT
           echo "dashboard_app=$DASHBOARD_APP" >> $GITHUB_OUTPUT
+          echo "image_prefix=$IMAGE_PREFIX" >> $GITHUB_OUTPUT
 
           # Log for debugging
           echo "## Deployment Parameters" >> $GITHUB_STEP_SUMMARY
@@ -101,6 +106,7 @@ jobs:
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Environment | $ENVIRONMENT |" >> $GITHUB_STEP_SUMMARY
           echo "| Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Prefix | $IMAGE_PREFIX |" >> $GITHUB_STEP_SUMMARY
           echo "| Resource Group | $RESOURCE_GROUP |" >> $GITHUB_STEP_SUMMARY
           echo "| Gateway App | $GATEWAY_APP |" >> $GITHUB_STEP_SUMMARY
           echo "| Dashboard App | $DASHBOARD_APP |" >> $GITHUB_STEP_SUMMARY
@@ -128,7 +134,7 @@ jobs:
       - name: Deploy Gateway to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}
+          imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}
           containerAppName: ${{ needs.prepare.outputs.gateway_app }}
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
           environmentVariables: |
@@ -139,7 +145,7 @@ jobs:
       - name: Verify deployment
         run: |
           echo "✅ Gateway deployed to ${{ needs.prepare.outputs.environment }}"
-          echo "   Image: ${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}"
+          echo "   Image: ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}"
           echo "   App: ${{ needs.prepare.outputs.gateway_app }}"
 
   deploy-dashboard:
@@ -165,7 +171,7 @@ jobs:
       - name: Deploy Dashboard to Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}
+          imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}
           containerAppName: ${{ needs.prepare.outputs.dashboard_app }}
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
           environmentVariables: |
@@ -174,7 +180,7 @@ jobs:
       - name: Verify deployment
         run: |
           echo "✅ Dashboard deployed to ${{ needs.prepare.outputs.environment }}"
-          echo "   Image: ${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}"
+          echo "   Image: ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}"
           echo "   App: ${{ needs.prepare.outputs.dashboard_app }}"
 
   health-check:
@@ -239,8 +245,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Image | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Gateway | \`${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dashboard | \`${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gateway | \`${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dashboard | \`${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Resources" >> $GITHUB_STEP_SUMMARY
           echo "- **Resource Group:** \`${{ needs.prepare.outputs.resource_group }}\`" >> $GITHUB_STEP_SUMMARY
