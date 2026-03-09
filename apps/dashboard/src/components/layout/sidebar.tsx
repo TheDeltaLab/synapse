@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils';
 const navigation = [
     { name: 'Playground', href: '/playground', icon: MessageSquare },
     { name: 'API Keys', href: '/api-keys', icon: Key },
-    { name: 'Analytics', href: '/logs/analytics', icon: BarChart3 },
-    { name: 'Logs', href: '/logs', icon: ScrollText, exact: true },
+    { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+    { name: 'Logs', href: '/logs', icon: ScrollText },
 ];
 
 export function Sidebar() {
@@ -26,9 +26,7 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex-1 space-y-1 p-4">
                 {navigation.map((item) => {
-                    const isActive = item.exact
-                        ? pathname === item.href
-                        : pathname.startsWith(item.href);
+                    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                     return (
                         <Link
                             key={item.name}
