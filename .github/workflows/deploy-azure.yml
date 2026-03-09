@@ -131,7 +131,7 @@ jobs:
           imageToDeploy: ${{ env.IMAGE_PREFIX }}/gateway:${{ needs.prepare.outputs.image_tag }}
           containerAppName: ${{ needs.prepare.outputs.gateway_app }}
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
-          envVars: |
+          environmentVariables: |
             DATABASE_URL=secretref:database-url
             REDIS_URL=secretref:redis-url
             NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}
@@ -168,7 +168,7 @@ jobs:
           imageToDeploy: ${{ env.IMAGE_PREFIX }}/dashboard:${{ needs.prepare.outputs.image_tag }}
           containerAppName: ${{ needs.prepare.outputs.dashboard_app }}
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
-          envVars: |
+          environmentVariables: |
             NODE_ENV=${{ needs.prepare.outputs.environment == 'production' && 'production' || 'development' }}
 
       - name: Verify deployment

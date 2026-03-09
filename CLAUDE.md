@@ -182,3 +182,20 @@ Uses OIDC authentication (no stored secrets). Three environments: `test`, `stagi
 
 See `docs/AZURE_OIDC_SETUP.md` for full setup instructions.
 
+### Azure Doctor Script
+
+Run the diagnostic script to check and fix Azure configuration:
+
+```bash
+./scripts/azure-doctor.sh
+```
+
+The script checks:
+- Azure CLI login status
+- Azure AD application and service principal
+- Role assignments (Contributor on resource groups)
+- Federated credentials for OIDC
+- Container Apps access
+
+It will prompt to auto-fix any issues found.
+
