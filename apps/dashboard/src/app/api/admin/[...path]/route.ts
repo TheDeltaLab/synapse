@@ -10,7 +10,7 @@ const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:3000';
  */
 export async function GET(
     request: NextRequest,
-    { params }: { params: Promise<{ path: string[] }> }
+    { params }: { params: Promise<{ path: string[] }> },
 ) {
     const { path } = await params;
     const pathStr = path.join('/');
@@ -30,14 +30,14 @@ export async function GET(
         console.error('Gateway proxy error:', error);
         return NextResponse.json(
             { error: 'Failed to connect to gateway' },
-            { status: 502 }
+            { status: 502 },
         );
     }
 }
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: Promise<{ path: string[] }> }
+    { params }: { params: Promise<{ path: string[] }> },
 ) {
     const { path } = await params;
     const pathStr = path.join('/');
@@ -59,14 +59,14 @@ export async function POST(
         console.error('Gateway proxy error:', error);
         return NextResponse.json(
             { error: 'Failed to connect to gateway' },
-            { status: 502 }
+            { status: 502 },
         );
     }
 }
 
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: Promise<{ path: string[] }> }
+    { params }: { params: Promise<{ path: string[] }> },
 ) {
     const { path } = await params;
     const pathStr = path.join('/');
@@ -88,14 +88,14 @@ export async function PATCH(
         console.error('Gateway proxy error:', error);
         return NextResponse.json(
             { error: 'Failed to connect to gateway' },
-            { status: 502 }
+            { status: 502 },
         );
     }
 }
 
 export async function DELETE(
     _request: NextRequest,
-    { params }: { params: Promise<{ path: string[] }> }
+    { params }: { params: Promise<{ path: string[] }> },
 ) {
     const { path } = await params;
     const pathStr = path.join('/');
@@ -119,7 +119,7 @@ export async function DELETE(
         console.error('Gateway proxy error:', error);
         return NextResponse.json(
             { error: 'Failed to connect to gateway' },
-            { status: 502 }
+            { status: 502 },
         );
     }
 }

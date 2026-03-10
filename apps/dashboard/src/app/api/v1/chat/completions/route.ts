@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         console.error('Gateway proxy error:', error);
         return Response.json(
             { error: 'Failed to connect to gateway' },
-            { status: 502 }
+            { status: 502 },
         );
     }
 }
