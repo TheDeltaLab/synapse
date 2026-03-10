@@ -183,6 +183,7 @@ jobs:
           containerAppName: ${{ needs.prepare.outputs.dashboard_app }}
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
           targetPort: 3001
+          environmentVariables: GATEWAY_URL=${{ vars.GATEWAY_URL }}
 
       - name: Verify deployment
         run: |

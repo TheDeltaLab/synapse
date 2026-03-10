@@ -12,12 +12,14 @@ import type {
     AnalyticsQuery,
 } from '@synapse/shared';
 
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3000';
+// Use relative paths - requests go through Next.js API routes which proxy to the gateway
+// This avoids CORS issues and keeps the gateway URL server-side only
+const API_BASE = '/api';
 
 class GatewayClient {
     private baseUrl: string;
 
-    constructor(baseUrl: string = GATEWAY_URL) {
+    constructor(baseUrl: string = API_BASE) {
         this.baseUrl = baseUrl;
     }
 
