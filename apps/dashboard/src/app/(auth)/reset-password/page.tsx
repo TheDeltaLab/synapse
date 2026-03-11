@@ -1,6 +1,10 @@
 import { redirect } from 'next/navigation';
+
 import { ResetPasswordForm } from '@/components/auth';
 import { getSession } from '@/lib/auth';
+
+// Force dynamic rendering since we need to check the session
+export const dynamic = 'force-dynamic';
 
 export default async function ResetPasswordPage() {
     const session = await getSession();

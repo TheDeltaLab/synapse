@@ -5,6 +5,9 @@ import { CreateStaffDialog } from '@/components/users/create-staff-dialog';
 import { UsersTable } from '@/components/users/users-table';
 import { getSession, getUsers } from '@/lib/auth';
 
+// Force dynamic rendering since we need to check the session and database
+export const dynamic = 'force-dynamic';
+
 export default async function UsersPage() {
     const session = await getSession();
 

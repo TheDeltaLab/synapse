@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation';
 import { RegisterForm } from '@/components/auth';
 import { isRegistrationOpen } from '@/lib/auth';
 
+// Force dynamic rendering since we need to check the database
+export const dynamic = 'force-dynamic';
+
 export default async function RegisterPage() {
     const registrationOpen = await isRegistrationOpen();
 

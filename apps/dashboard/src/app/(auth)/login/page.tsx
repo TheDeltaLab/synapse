@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation';
 import { LoginForm } from '@/components/auth';
 import { isRegistrationOpen } from '@/lib/auth';
 
+// Force dynamic rendering since we need to check the database
+export const dynamic = 'force-dynamic';
+
 interface LoginPageProps {
     searchParams: Promise<{ from?: string }>;
 }
