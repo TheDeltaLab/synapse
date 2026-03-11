@@ -54,8 +54,8 @@ synapse/
 │       │   ├── app/(dashboard)/  # Dashboard pages
 │       │   │   ├── playground/   # Interactive chat testing
 │       │   │   ├── api-keys/     # API key management
-│       │   │   ├── logs/         # Request logs table
-│       │   │   └── logs/analytics/ # Analytics charts
+│       │   │   ├── analytics/    # Analytics charts
+│       │   │   └── logs/         # Request logs table
 │       │   ├── components/       # UI components
 │       │   │   ├── layout/       # Sidebar, Header
 │       │   │   ├── analytics/    # Chart components
@@ -135,6 +135,7 @@ Copy `.env.example` and configure:
 
 ## Important Notes
 
+- **Run Lint Before Commit**: Always run `pnpm lint` before committing changes to ensure code quality.
 - **Package Manager**: This project uses pnpm exclusively. Always use `pnpm` or `pnpx` instead of `npm`/`npx`.
 - **Use Latest Packages**: When installing new dependencies, always use `@latest` tag (e.g., `pnpm add package@latest`) unless there's a specific compatibility issue.
 - **Dashboard Layout**: All dashboard pages should use the shared `<Header>` component and wrap content in `<div className="flex-1 p-6">` for consistent styling.

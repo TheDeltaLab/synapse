@@ -36,10 +36,6 @@ RUN pnpm install --frozen-lockfile
 # ============================================
 FROM base AS builder
 
-# Build argument for gateway URL (used at build time for Next.js)
-ARG NEXT_PUBLIC_GATEWAY_URL=http://localhost:3000
-ENV NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL}
-
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
@@ -73,6 +69,8 @@ USER nextjs
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOSTNAME="0.0.0.0"
+# GATEWAY_URL is set at runtime via Azure Container Apps environment variables
+# Example: GATEWAY_URL=https://synapse-gateway-test.azurecontainerapps.io
 
 EXPOSE 3001
 

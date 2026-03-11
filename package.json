@@ -10,7 +10,7 @@
     "build": "pnpm --recursive --filter \"./packages/*\" --if-present build && pnpm --filter \"./apps/*\" build",
     "test": "pnpm --recursive --if-present test",
     "lint": "pnpm --recursive lint",
-    "type-check": "pnpm --recursive type-check",
+    "type-check": "pnpm --recursive --filter \"./packages/*\" --if-present build && pnpm --recursive type-check",
     "clean": "pnpm --recursive --if-present clean && rm -rf node_modules"
   },
   "keywords": ["ai", "gateway", "llm", "openai", "anthropic", "hono", "monorepo"],
