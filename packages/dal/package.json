@@ -4,12 +4,13 @@
   "description": "Data Access Layer with Prisma ORM for Synapse",
   "type": "module",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./prisma/client": {
       "types": "./generated/prisma/client.ts",
@@ -17,6 +18,8 @@
     }
   },
   "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -30,8 +33,10 @@
     "pg": "^8.20.0"
   },
   "devDependencies": {
+    "@synapse/config": "workspace:*",
     "@types/node": "^22.19.12",
     "prisma": "^7.4.1",
+    "tsup": "^8.4.0",
     "tsx": "^4.19.2"
   }
 }
