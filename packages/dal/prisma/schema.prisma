@@ -62,3 +62,45 @@ model RequestLog {
   @@index([cached])
   @@map("request_logs")
 }
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING_PASSWORD_RESET
+}
+
+model User {
+  id          String      @id @default(uuid())
+  email       String      @unique
+  name        String
+  role        UserRole    @default(STAFF)
+  status      UserStatus  @default(ACTIVE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  lastLoginAt DateTime?
+
+  authProviders AuthProvider[]
+
+  @@map("users")
+}
+
+model AuthProvider {
+  id              String   @id @default(uuid())
+  userId          String
+  name            String   // Provider name: "password", "google", "github", etc.
+  providerId      String   // For password: bcrypt hash; For OAuth: external user ID
+  providerOptions Json?    // { salt: "base64..." } for password provider
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([name, providerId, userId])
+  @@index([userId])
+  @@map("auth_providers")
+}

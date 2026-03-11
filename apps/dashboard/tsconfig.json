@@ -14,6 +14,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "rootDir": "../..",
     "plugins": [
       {
         "name": "next"
@@ -23,8 +24,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "synapse/*": ["./src/*"],
-      "@synapse/shared": ["../../packages/shared/src/index.ts"],
-      "@synapse/shared/*": ["../../packages/shared/src/*"]
+      "@synapse/shared": ["../../packages/shared/dist/index.d.ts"],
+      "@synapse/dal": ["../../packages/dal/dist/index.d.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
