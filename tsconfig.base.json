@@ -39,13 +39,11 @@
     // Skip Type Checking
     "skipLibCheck": true,
 
-    // Path Aliases
+    // Path Aliases - point to dist for built packages
     "baseUrl": ".",
     "paths": {
-      "@synapse/shared": ["./packages/shared/src/index.ts"],
-      "@synapse/shared/*": ["./packages/shared/src/*"],
-      "@synapse/dal": ["./packages/dal/src/index.ts"],
-      "@synapse/dal/*": ["./packages/dal/src/*"],
+      "@synapse/shared": ["./packages/shared/dist/index.d.ts"],
+      "@synapse/dal": ["./packages/dal/dist/index.d.ts"],
       "@synapse/dal/prisma": ["./packages/dal/generated/prisma/index.js"],
       "@synapse/dal/prisma/*": ["./packages/dal/generated/prisma/*"],
       "@synapse/client-sdk": ["./packages/client-sdk/src/index.ts"],
