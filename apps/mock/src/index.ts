@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { anthropicApp } from './providers/anthropic.js';
 import { googleApp } from './providers/google.js';
