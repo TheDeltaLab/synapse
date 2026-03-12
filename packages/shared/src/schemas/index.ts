@@ -58,3 +58,26 @@ export {
     type AnalyticsResponse,
     type AnalyticsQuery,
 } from './logs.js';
+
+export {
+    embeddingRequestSchema,
+    embeddingObjectSchema,
+    embeddingUsageSchema,
+    embeddingResponseSchema,
+    embeddingLogItemSchema,
+    embeddingLogsQuerySchema,
+    embeddingLogListResponseSchema,
+    embeddingProviderStatsSchema,
+    embeddingModelStatsSchema,
+    embeddingAnalyticsResponseSchema,
+    type EmbeddingRequest,
+    type EmbeddingObject,
+    type EmbeddingUsage,
+    type EmbeddingResponse,
+    type EmbeddingLogItem,
+    type EmbeddingLogsQuery,
+    type EmbeddingLogListResponse,
+    type EmbeddingProviderStats,
+    type EmbeddingModelStats,
+    type EmbeddingAnalyticsResponse,
+} from './embeddings.js';

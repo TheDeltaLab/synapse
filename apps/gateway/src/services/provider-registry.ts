@@ -3,7 +3,7 @@ import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { customProvider, type LanguageModel } from 'ai';
+import { customProvider, type LanguageModel, type EmbeddingModel } from 'ai';
 import { providerConfig, type ProviderName } from '../config/providers.js';
 
 type LanguageModelV3 = Extract<LanguageModel, { specificationVersion: 'v3' }>;
@@ -129,6 +129,7 @@ export class ProviderRegistry {
         if (providerConfig.openai.apiKey) {
             const openai = createOpenAI({
                 apiKey: providerConfig.openai.apiKey,
+                baseURL: providerConfig.openai.baseURL,
             });
             this.providers.set('openai', openai);
         }
@@ -137,6 +138,7 @@ export class ProviderRegistry {
         if (providerConfig.anthropic.apiKey) {
             const anthropic = createAnthropic({
                 apiKey: providerConfig.anthropic.apiKey,
+                baseURL: providerConfig.anthropic.baseURL,
             });
             this.providers.set('anthropic', anthropic);
         }
@@ -145,6 +147,7 @@ export class ProviderRegistry {
         if (providerConfig.google.apiKey) {
             const google = createGoogleGenerativeAI({
                 apiKey: providerConfig.google.apiKey,
+                baseURL: providerConfig.google.baseURL,
             });
             this.providers.set('google', google);
         }
@@ -153,6 +156,7 @@ export class ProviderRegistry {
         if (providerConfig.openrouter.apiKey) {
             const openrouter = createOpenRouter({
                 apiKey: providerConfig.openrouter.apiKey,
+                baseURL: providerConfig.openrouter.baseURL,
             });
             this.providers.set('openrouter', openrouter);
         }
@@ -177,6 +181,67 @@ export class ProviderRegistry {
 
     getAvailableProviders(): ProviderName[] {
         return Array.from(this.providers.keys());
+    }
+
+    // ============================================================
+    // Embedding Methods
+    // ============================================================
+
+    /**
+     * Check if a provider supports embeddings
+     */
+    hasEmbeddingSupport(provider: ProviderName): boolean {
+        const config = providerConfig[provider];
+        return (
+            this.hasProvider(provider)
+            && config.embeddingModels
+            && config.embeddingModels.length > 0
+        );
+    }
+
+    /**
+     * Get list of providers that support embeddings
+     */
+    getAvailableEmbeddingProviders(): ProviderName[] {
+        return this.getAvailableProviders().filter(p =>
+            this.hasEmbeddingSupport(p),
+        );
+    }
+
+    /**
+     * Get embedding model instance
+     * @throws Error if provider not found or doesn't support embeddings
+     */
+    getEmbeddingModel(provider: ProviderName, modelId: string): EmbeddingModel {
+        const providerInstance = this.getProvider(provider);
+        if (!providerInstance) {
+            throw new Error(`Provider ${provider} not found or not configured`);
+        }
+
+        if (!this.hasEmbeddingSupport(provider)) {
+            throw new Error(`Provider ${provider} does not support embeddings`);
+        }
+
+        // Vercel AI SDK: provider.textEmbeddingModel(modelId)
+        if (typeof providerInstance.textEmbeddingModel === 'function') {
+            return providerInstance.textEmbeddingModel(modelId);
+        }
+
+        throw new Error(`Provider ${provider} does not expose embedding model method`);
+    }
+
+    /**
+     * Get list of embedding models for a provider
+     */
+    getEmbeddingModels(provider: ProviderName): readonly string[] {
+        return providerConfig[provider].embeddingModels;
+    }
+
+    /**
+     * Get default embedding model for a provider
+     */
+    getDefaultEmbeddingModel(provider: ProviderName): string | null {
+        return providerConfig[provider].defaultEmbeddingModel;
     }
 }
 

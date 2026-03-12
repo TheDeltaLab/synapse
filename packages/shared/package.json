@@ -14,7 +14,9 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
@@ -24,6 +26,7 @@
     "@synapse/eslint-config": "workspace:*",
     "@types/node": "^22.10.5",
     "eslint": "^9.18.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
   }
 }

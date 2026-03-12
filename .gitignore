@@ -42,3 +42,5 @@ packages/dal/generated/
 # Misc
 *.tsbuildinfo
 .turbo/
+
+plans/

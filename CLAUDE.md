@@ -139,6 +139,8 @@ Copy `.env.example` and configure:
 - **Use Latest Packages**: When installing new dependencies, always use `@latest` tag (e.g., `pnpm add package@latest`) unless there's a specific compatibility issue.
 - **Dashboard Layout**: All dashboard pages should use the shared `<Header>` component and wrap content in `<div className="flex-1 p-6">` for consistent styling.
 - **Prisma Changes**: After modifying `schema.prisma`, run `pnpm --filter @synapse/dal db:migrate` and `pnpm --filter @synapse/dal db:generate`.
+- **Code Comments**: All code comments MUST be written in English, not Chinese or other languages. This includes JSDoc comments, inline comments, and TODO comments.
+- **Testing**: When adding or modifying code, always write corresponding tests. Tests should be placed in `__tests__` directories alongside the source files. Run `pnpm test` to execute tests. Ensure all tests pass before considering a task complete.
 
 ## CI/CD
 

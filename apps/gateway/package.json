@@ -10,7 +10,9 @@
     "start": "node dist/index.js",
     "build": "tsup",
     "lint": "eslint .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
@@ -38,6 +40,7 @@
     "eslint": "^9.18.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
   }
 }
