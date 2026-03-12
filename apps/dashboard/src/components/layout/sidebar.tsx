@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, ChevronUp, Key, KeyRound, LogOut, MessageSquare, ScrollText, Users, Zap } from 'lucide-react';
+import { BarChart3, ChevronUp, Key, KeyRound, LogOut, MessageSquare, ScrollText, Users, Zap, Boxes } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
@@ -19,6 +19,7 @@ const navigation = [
     { name: 'Playground', href: '/playground', icon: MessageSquare },
     { name: 'API Keys', href: '/api-keys', icon: Key },
     { name: 'Logs', href: '/logs', icon: ScrollText },
+    { name: 'Embeddings', href: '/logs/embeddings', icon: Boxes },
 ];
 
 const adminNavigation = [

@@ -119,6 +119,7 @@ export const modelProvider: ModelProvider = customProvider(
 
 export class ProviderRegistry {
     private providers: Map<ProviderName, any> = new Map();
+    private embeddingProviders: Map<ProviderName, any> = new Map();
 
     constructor() {
         this.registerProviders();
@@ -159,6 +160,19 @@ export class ProviderRegistry {
                 baseURL: providerConfig.openrouter.baseURL,
             });
             this.providers.set('openrouter', openrouter);
+
+            // Register a separate OpenAI SDK instance for OpenRouter embeddings.
+            // The native @openrouter/ai-sdk-provider does not forward the `dimensions`
+            // parameter in its doEmbed() implementation. Since OpenRouter's embedding
+            // API is fully OpenAI-compatible, we use @ai-sdk/openai which correctly
+            // passes `dimensions` through providerOptions.
+            if (providerConfig.openrouter.embeddingModels.length > 0) {
+                const openrouterEmbedding = createOpenAI({
+                    apiKey: providerConfig.openrouter.apiKey,
+                    baseURL: providerConfig.openrouter.baseURL,
+                });
+                this.embeddingProviders.set('openrouter', openrouterEmbedding);
+            }
         }
     }
 
@@ -209,12 +223,13 @@ export class ProviderRegistry {
     }
 
     /**
-     * Get embedding model instance
+     * Get embedding model instance.
+     * Checks embeddingProviders first (for provider-specific overrides),
+     * then falls back to the general provider.
      * @throws Error if provider not found or doesn't support embeddings
      */
     getEmbeddingModel(provider: ProviderName, modelId: string): EmbeddingModel {
-        const providerInstance = this.getProvider(provider);
-        if (!providerInstance) {
+        if (!this.hasProvider(provider)) {
             throw new Error(`Provider ${provider} not found or not configured`);
         }
 
@@ -222,7 +237,15 @@ export class ProviderRegistry {
             throw new Error(`Provider ${provider} does not support embeddings`);
         }
 
-        // Vercel AI SDK: provider.textEmbeddingModel(modelId)
+        // Prefer dedicated embedding provider if registered (e.g. OpenRouter uses
+        // an @ai-sdk/openai instance so that `dimensions` is forwarded correctly)
+        const embeddingProvider = this.embeddingProviders.get(provider);
+        if (embeddingProvider && typeof embeddingProvider.textEmbeddingModel === 'function') {
+            return embeddingProvider.textEmbeddingModel(modelId);
+        }
+
+        // Fall back to the general provider
+        const providerInstance = this.getProvider(provider);
         if (typeof providerInstance.textEmbeddingModel === 'function') {
             return providerInstance.textEmbeddingModel(modelId);
         }

@@ -1,5 +1,6 @@
 import { embedMany } from 'ai';
 import type { Context } from 'hono';
+import { prisma } from '@synapse/dal';
 import { embeddingRequestSchema, HTTP_STATUS } from '@synapse/shared';
 import type { ProviderName } from '../../config/providers.js';
 import { providerRegistry } from '../../services/provider-registry.js';
@@ -34,10 +35,62 @@ function determineEmbeddingProvider(model: string): ProviderName {
 }
 
 /**
+ * Embedding log entry that accumulates fields as they become available
+ */
+interface EmbeddingLogEntry {
+    apiKeyId: string;
+    provider: string | null;
+    model: string | null;
+    inputCount: number | null;
+    dimensions: number | null;
+    tokens: number | null;
+    latency: number | null;
+    statusCode: number;
+}
+
+/**
+ * Persist embedding log entry to database
+ */
+async function saveEmbeddingLog(entry: EmbeddingLogEntry): Promise<void> {
+    try {
+        await prisma.embeddingLog.create({
+            data: {
+                apiKeyId: entry.apiKeyId,
+                provider: entry.provider ?? 'unknown',
+                model: entry.model ?? 'unknown',
+                inputCount: entry.inputCount ?? 0,
+                dimensions: entry.dimensions,
+                tokens: entry.tokens,
+                latency: entry.latency,
+                statusCode: entry.statusCode,
+            },
+        });
+    } catch (error) {
+        // Logging failures should not affect the main flow
+        console.error('Failed to log embedding request:', error);
+    }
+}
+
+/**
  * Handle embedding requests
  * POST /v1/embeddings
  */
 export async function handleEmbeddings(c: Context): Promise<Response> {
+    const startTime = Date.now();
+    const apiKey = c.get('apiKey');
+
+    // Progressively collect log fields as they become available
+    const logEntry: EmbeddingLogEntry = {
+        apiKeyId: apiKey.id,
+        provider: null,
+        model: null,
+        inputCount: null,
+        dimensions: null,
+        tokens: null,
+        latency: null,
+        statusCode: 500,
+    };
+
     try {
         // 1. Parse and validate request
         const body = await c.req.json();
@@ -60,13 +113,23 @@ export async function handleEmbeddings(c: Context): Promise<Response> {
 
         const request = parseResult.data;
 
+        // Collect parsed fields into log
+        logEntry.model = request.model;
+        logEntry.inputCount = Array.isArray(request.input) ? request.input.length : 1;
+        logEntry.dimensions = request.dimensions ?? null;
+
         // 2. Determine provider
         const providerHeader = c.req.header('x-synapse-provider');
         const provider = (providerHeader as ProviderName) || determineEmbeddingProvider(request.model);
+        logEntry.provider = provider;
 
         // 3. Check if provider supports embeddings
         if (!providerRegistry.hasEmbeddingSupport(provider)) {
             const availableProviders = providerRegistry.getAvailableEmbeddingProviders();
+            logEntry.statusCode = 400;
+            logEntry.latency = Date.now() - startTime;
+            await saveEmbeddingLog(logEntry);
+
             return c.json(
                 {
                     error: {
@@ -90,6 +153,14 @@ export async function handleEmbeddings(c: Context): Promise<Response> {
         const result = await embedMany({
             model,
             values: inputs,
+            ...(request.dimensions !== undefined && {
+                providerOptions: {
+                    // Always use "openai" key: all current embedding providers that
+                    // support `dimensions` use @ai-sdk/openai under the hood (both
+                    // native OpenAI and OpenRouter via its OpenAI-compatible wrapper).
+                    openai: { dimensions: request.dimensions },
+                },
+            }),
         });
 
         // 7. Format response
@@ -105,8 +176,11 @@ export async function handleEmbeddings(c: Context): Promise<Response> {
         // 8. Calculate token usage (from SDK result if available)
         const promptTokens = result.usage?.tokens || 0;
 
-        // 9. Log request (will be implemented in M3)
-        // TODO: Implement embedding request logging
+        // 9. Log successful request
+        logEntry.tokens = promptTokens;
+        logEntry.statusCode = 200;
+        logEntry.latency = Date.now() - startTime;
+        await saveEmbeddingLog(logEntry);
 
         // 10. Return OpenAI-compatible response
         return c.json({
@@ -120,6 +194,13 @@ export async function handleEmbeddings(c: Context): Promise<Response> {
         });
     } catch (error) {
         console.error('Embedding error:', error);
+
+        // Log error with whatever fields were collected so far
+        logEntry.statusCode = 500;
+        logEntry.latency = Date.now() - startTime;
+        if (apiKey?.id) {
+            await saveEmbeddingLog(logEntry);
+        }
 
         return c.json(
             {

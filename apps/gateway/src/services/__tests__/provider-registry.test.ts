@@ -1,5 +1,61 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { providerConfig } from '../../config/providers.js';
+
+// Mock provider factories to avoid needing real API keys
+vi.mock('@ai-sdk/openai', () => ({
+    createOpenAI: vi.fn((config: any) => {
+        const instance = vi.fn((modelId: string) => ({ modelId, provider: 'openai', baseURL: config.baseURL }));
+        (instance as any).chat = vi.fn((modelId: string) => ({ modelId, provider: 'openai-chat', baseURL: config.baseURL }));
+        (instance as any).textEmbeddingModel = vi.fn((modelId: string) => ({
+            modelId,
+            provider: 'openai-embedding',
+            baseURL: config.baseURL,
+        }));
+        return instance;
+    }),
+}));
+
+vi.mock('@ai-sdk/anthropic', () => ({
+    createAnthropic: vi.fn(() => {
+        const instance = vi.fn((modelId: string) => ({ modelId, provider: 'anthropic' }));
+        return instance;
+    }),
+}));
+
+vi.mock('@ai-sdk/google', () => ({
+    createGoogleGenerativeAI: vi.fn(() => {
+        const instance = vi.fn((modelId: string) => ({ modelId, provider: 'google' }));
+        (instance as any).textEmbeddingModel = vi.fn((modelId: string) => ({
+            modelId,
+            provider: 'google-embedding',
+        }));
+        return instance;
+    }),
+}));
+
+vi.mock('@openrouter/ai-sdk-provider', () => ({
+    createOpenRouter: vi.fn((config: any) => {
+        const instance = vi.fn((modelId: string) => ({ modelId, provider: 'openrouter', baseURL: config.baseURL }));
+        (instance as any).textEmbeddingModel = vi.fn((modelId: string) => ({
+            modelId,
+            provider: 'openrouter-native-embedding',
+            baseURL: config.baseURL,
+        }));
+        return instance;
+    }),
+}));
+
+vi.mock('@ai-sdk/deepseek', () => ({
+    createDeepSeek: vi.fn(() => {
+        const instance = vi.fn((modelId: string) => ({ modelId, provider: 'deepseek' }));
+        (instance as any).chat = vi.fn((modelId: string) => ({ modelId, provider: 'deepseek' }));
+        return instance;
+    }),
+}));
+
+vi.mock('ai', () => ({
+    customProvider: vi.fn(() => ({})),
+}));
 
 /**
  * Tests for ProviderRegistry embedding functionality
@@ -88,5 +144,59 @@ describe('ProviderRegistry Embedding Configuration', () => {
             expect(providerConfig.openrouter.defaultEmbeddingModel).toBe('text-embedding-3-small');
             expect(providerConfig.anthropic.defaultEmbeddingModel).toBeNull();
         });
+    });
+});
+
+describe('ProviderRegistry OpenRouter Embedding Override', () => {
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    it('should register a dedicated embedding provider for OpenRouter using @ai-sdk/openai', async () => {
+        // Set env vars so providers are registered
+        process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+        process.env.OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+        // Dynamic import so mocks are in effect
+        const { ProviderRegistry } = await import('../provider-registry.js');
+        const registry = new ProviderRegistry();
+
+        // OpenRouter chat should use the native openrouter provider
+        expect(registry.hasProvider('openrouter')).toBe(true);
+
+        // OpenRouter embedding model should come from the @ai-sdk/openai instance
+        const embeddingModel = registry.getEmbeddingModel('openrouter', 'text-embedding-3-small') as any;
+        expect(embeddingModel.modelId).toBe('text-embedding-3-small');
+        // The dedicated embedding provider is an @ai-sdk/openai instance, so it
+        // should return 'openai-embedding' from our mock (not 'openrouter-native-embedding')
+        expect(embeddingModel.provider).toBe('openai-embedding');
+        expect(embeddingModel.baseURL).toBe('https://openrouter.ai/api/v1');
+    });
+
+    it('should use the general provider for embedding when no dedicated embedding provider exists', async () => {
+        // Set env vars for OpenAI (no dedicated embedding override needed)
+        process.env.OPENAI_API_KEY = 'test-openai-key';
+
+        const { ProviderRegistry } = await import('../provider-registry.js');
+        const registry = new ProviderRegistry();
+
+        if (registry.hasProvider('openai')) {
+            const embeddingModel = registry.getEmbeddingModel('openai', 'text-embedding-3-small') as any;
+            expect(embeddingModel.modelId).toBe('text-embedding-3-small');
+            // Falls back to the general provider's textEmbeddingModel
+            expect(embeddingModel.provider).toBe('openai-embedding');
+        }
+    });
+
+    it('should throw when provider does not support embeddings', async () => {
+        process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+
+        const { ProviderRegistry } = await import('../provider-registry.js');
+        const registry = new ProviderRegistry();
+
+        if (registry.hasProvider('anthropic')) {
+            expect(() => registry.getEmbeddingModel('anthropic', 'some-model'))
+                .toThrow('does not support embeddings');
+        }
     });
 });

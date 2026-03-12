@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.28.1",
   "scripts": {
     "dev": "pnpm --parallel --filter gateway --filter @synapse/dashboard dev",
-    "dev-mock": "pnpm --filter @synapse/mock dev & sleep 2 && OPENAI_BASE_URL=http://localhost:9001/v1 ANTHROPIC_BASE_URL=http://localhost:9002 GOOGLE_BASE_URL=http://localhost:9003 pnpm --parallel --filter gateway --filter @synapse/dashboard dev",
+    "dev-mock": "pnpm --filter @synapse/mock... dev & sleep 2 && pnpm --parallel --filter gateway --filter @synapse/dashboard dev",
     "build": "pnpm --recursive --filter \"./packages/*\" --if-present build && pnpm --filter \"./apps/*\" build",
     "test": "pnpm --recursive --if-present test",
     "lint": "pnpm --recursive lint",

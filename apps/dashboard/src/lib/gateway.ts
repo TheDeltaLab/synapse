@@ -10,6 +10,10 @@ import type {
     AnalyticsResponse,
     LogsQuery,
     AnalyticsQuery,
+    EmbeddingLogsQuery,
+    EmbeddingLogListResponse,
+    EmbeddingLogItem,
+    EmbeddingAnalyticsResponse,
 } from '@synapse/shared';
 
 // Use relative paths - requests go through Next.js API routes which proxy to the gateway
@@ -190,6 +194,92 @@ class GatewayClient {
                 }
             }
         }
+    }
+
+    // Embeddings (for playground)
+    async createEmbedding(
+        apiKey: string,
+        body: Record<string, unknown>,
+        provider?: string,
+    ): Promise<unknown> {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        };
+
+        if (provider) {
+            headers['x-synapse-provider'] = provider;
+        }
+
+        const response = await fetch(`${this.baseUrl}/v1/embeddings`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || error.message || 'Failed to generate embedding');
+        }
+
+        return response.json();
+    }
+
+    // Embedding Providers
+    async getEmbeddingProviders(): Promise<{
+        providers: Array<{
+            name: string;
+            models: string[];
+            defaultModel: string | null;
+            available: boolean;
+        }>;
+    }> {
+        const response = await fetch(`${this.baseUrl}/admin/providers/embedding`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch embedding providers: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
+    // Embedding Logs
+    async listEmbeddingLogs(query?: Partial<EmbeddingLogsQuery>): Promise<EmbeddingLogListResponse> {
+        const params = new URLSearchParams();
+        if (query?.page) params.set('page', query.page.toString());
+        if (query?.limit) params.set('limit', query.limit.toString());
+        if (query?.provider) params.set('provider', query.provider);
+        if (query?.model) params.set('model', query.model);
+        if (query?.startDate) params.set('startDate', query.startDate);
+        if (query?.endDate) params.set('endDate', query.endDate);
+        if (query?.apiKeyId) params.set('apiKeyId', query.apiKeyId);
+
+        const url = `${this.baseUrl}/admin/logs/embeddings${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to list embedding logs: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
+    async getEmbeddingLog(id: string): Promise<EmbeddingLogItem & {
+        apiKey: { id: string; name: string };
+    }> {
+        const response = await fetch(`${this.baseUrl}/admin/logs/embeddings/${id}`);
+        if (!response.ok) {
+            throw new Error(`Failed to get embedding log: ${response.statusText}`);
+        }
+        return response.json();
+    }
+
+    async getEmbeddingAnalytics(query?: Partial<AnalyticsQuery>): Promise<EmbeddingAnalyticsResponse> {
+        const params = new URLSearchParams();
+        if (query?.range) params.set('range', query.range);
+
+        const url = `${this.baseUrl}/admin/logs/embeddings/analytics${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to get embedding analytics: ${response.statusText}`);
+        }
+        return response.json();
     }
 }
 

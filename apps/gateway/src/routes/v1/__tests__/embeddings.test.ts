@@ -24,12 +24,33 @@ vi.mock('ai', () => ({
     })),
 }));
 
+// Mock Prisma DAL
+vi.mock('@synapse/dal', () => ({
+    prisma: {
+        embeddingLog: {
+            create: vi.fn(async () => ({ id: 'mock-log-id' })),
+        },
+    },
+}));
+
+// Helper to parse JSON response with type assertion
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function parseJson(res: Response): Promise<Record<string, any>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (await res.json()) as Record<string, any>;
+}
+
 describe('handleEmbeddings', () => {
     let app: Hono;
 
     beforeEach(() => {
         vi.clearAllMocks();
         app = new Hono();
+        // Set up mock apiKey context
+        app.use('*', async (c, next) => {
+            c.set('apiKey', { id: 'test-api-key-id', name: 'test-key', userId: null, rateLimit: 1000 });
+            await next();
+        });
         app.post('/v1/embeddings', handleEmbeddings);
     });
 
@@ -42,7 +63,7 @@ describe('handleEmbeddings', () => {
             });
 
             expect(res.status).toBe(400);
-            const json = await res.json();
+            const json = await parseJson(res);
             expect(json.error.type).toBe('invalid_request_error');
         });
 
@@ -54,7 +75,7 @@ describe('handleEmbeddings', () => {
             });
 
             expect(res.status).toBe(400);
-            const json = await res.json();
+            const json = await parseJson(res);
             expect(json.error.type).toBe('invalid_request_error');
         });
 
@@ -94,7 +115,7 @@ describe('handleEmbeddings', () => {
             });
 
             expect(res.status).toBe(400);
-            const json = await res.json();
+            const json = await parseJson(res);
             expect(json.error.message).toContain('does not support embeddings');
             expect(json.error.code).toBe('unsupported_provider');
         });
@@ -112,7 +133,7 @@ describe('handleEmbeddings', () => {
             });
 
             expect(res.status).toBe(200);
-            const json = await res.json();
+            const json = await parseJson(res);
             expect(json.object).toBe('list');
             expect(json.data).toHaveLength(1);
             expect(json.data[0].object).toBe('embedding');
@@ -134,7 +155,7 @@ describe('handleEmbeddings', () => {
             });
 
             expect(res.status).toBe(200);
-            const json = await res.json();
+            const json = await parseJson(res);
             expect(json.data).toHaveLength(3);
             expect(json.data[0].index).toBe(0);
             expect(json.data[1].index).toBe(1);
@@ -153,7 +174,7 @@ describe('handleEmbeddings', () => {
             });
 
             expect(res.status).toBe(200);
-            const json = await res.json();
+            const json = await parseJson(res);
             expect(typeof json.data[0].embedding).toBe('string');
             // Base64 encoded string should be decodable
             expect(() => atob(json.data[0].embedding)).not.toThrow();
@@ -187,7 +208,7 @@ describe('handleEmbeddings', () => {
                 }),
             });
 
-            const json = await res.json();
+            const json = await parseJson(res);
 
             // Check top-level structure
             expect(json).toHaveProperty('object', 'list');

@@ -22,7 +22,7 @@ export const embeddingRequestSchema = z.object({
     encoding_format: z.enum(['float', 'base64']).optional().default('float'),
 
     /** Output dimensions (only supported by some models, e.g. text-embedding-3-*) */
-    dimensions: z.number().int().positive().optional(),
+    dimensions: z.number().int().positive().max(3072).optional(),
 
     /** User identifier (for tracking) */
     user: z.string().optional(),
