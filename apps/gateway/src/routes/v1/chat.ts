@@ -42,8 +42,7 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
         const apiKey = c.get('apiKey');
 
         // Use provider from x-synapse-provider header, or fall back to determining from model name
-        const providerHeader = c.req.header('x-synapse-provider');
-        const provider = (providerHeader as ProviderName) || determineProvider(request.model);
+        const provider = c.req.header('x-synapse-provider') as ProviderName;
         const modelId = request.model;
 
         // Check if provider is available
@@ -222,23 +221,6 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
             message: error instanceof Error ? error.message : 'Failed to process request',
         }, HTTP_STATUS.INTERNAL_SERVER_ERROR);
     }
-}
-
-/**
- * Determine provider from model name
- */
-function determineProvider(model: string): ProviderName {
-    if (model.startsWith('gpt-') || model.includes('openai')) {
-        return 'openai';
-    }
-    if (model.startsWith('claude-') || model.includes('anthropic')) {
-        return 'anthropic';
-    }
-    if (model.startsWith('gemini-') || model.includes('google')) {
-        return 'google';
-    }
-    // Default to openai
-    return 'openai';
 }
 
 /**

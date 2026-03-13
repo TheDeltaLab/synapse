@@ -821,6 +821,7 @@ admin.get('/logs/embeddings', async (c) => {
                 model: true,
                 inputCount: true,
                 dimensions: true,
+                requestContent: true,
                 tokens: true,
                 latency: true,
                 statusCode: true,

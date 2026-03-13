@@ -19,22 +19,6 @@ function encodeEmbeddingToBase64(embedding: number[]): string {
 }
 
 /**
- * Determine provider from model name
- */
-function determineEmbeddingProvider(model: string): ProviderName {
-    // OpenAI embedding models
-    if (model.startsWith('text-embedding-')) {
-        return 'openai';
-    }
-    // Google embedding models
-    if (model.includes('gecko') || model === 'text-embedding-004') {
-        return 'google';
-    }
-    // Default to OpenAI
-    return 'openai';
-}
-
-/**
  * Embedding log entry that accumulates fields as they become available
  */
 interface EmbeddingLogEntry {
@@ -43,6 +27,7 @@ interface EmbeddingLogEntry {
     model: string | null;
     inputCount: number | null;
     dimensions: number | null;
+    requestContent: string | null;
     tokens: number | null;
     latency: number | null;
     statusCode: number;
@@ -60,6 +45,7 @@ async function saveEmbeddingLog(entry: EmbeddingLogEntry): Promise<void> {
                 model: entry.model ?? 'unknown',
                 inputCount: entry.inputCount ?? 0,
                 dimensions: entry.dimensions,
+                requestContent: entry.requestContent,
                 tokens: entry.tokens,
                 latency: entry.latency,
                 statusCode: entry.statusCode,
@@ -86,6 +72,7 @@ export async function handleEmbeddings(c: Context): Promise<Response> {
         model: null,
         inputCount: null,
         dimensions: null,
+        requestContent: null,
         tokens: null,
         latency: null,
         statusCode: 500,
@@ -117,10 +104,12 @@ export async function handleEmbeddings(c: Context): Promise<Response> {
         logEntry.model = request.model;
         logEntry.inputCount = Array.isArray(request.input) ? request.input.length : 1;
         logEntry.dimensions = request.dimensions ?? null;
+        logEntry.requestContent = JSON.stringify(
+            Array.isArray(request.input) ? request.input : [request.input],
+        );
 
         // 2. Determine provider
-        const providerHeader = c.req.header('x-synapse-provider');
-        const provider = (providerHeader as ProviderName) || determineEmbeddingProvider(request.model);
+        const provider = c.req.header('x-synapse-provider') as ProviderName;
         logEntry.provider = provider;
 
         // 3. Check if provider supports embeddings

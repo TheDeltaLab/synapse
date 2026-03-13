@@ -317,6 +317,7 @@ describe('embeddingLogItemSchema', () => {
         model: 'text-embedding-3-small',
         inputCount: 5,
         dimensions: 1536,
+        requestContent: '["Hello, world!","Test input"]',
         tokens: 100,
         latency: 150,
         statusCode: 200,
@@ -332,6 +333,7 @@ describe('embeddingLogItemSchema', () => {
         const result = embeddingLogItemSchema.safeParse({
             ...validLogItem,
             dimensions: null,
+            requestContent: null,
             tokens: null,
             latency: null,
         });
@@ -458,6 +460,7 @@ describe('embeddingLogListResponseSchema', () => {
                     model: 'text-embedding-3-small',
                     inputCount: 1,
                     dimensions: null,
+                    requestContent: '["Hello"]',
                     tokens: 10,
                     latency: 100,
                     statusCode: 200,

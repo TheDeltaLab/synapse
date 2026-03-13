@@ -68,6 +68,7 @@ export const embeddingLogItemSchema = z.object({
     model: z.string(),
     inputCount: z.number().int().positive(),
     dimensions: z.number().int().positive().nullable(),
+    requestContent: z.string().nullable(),
     tokens: z.number().int().nonnegative().nullable(),
     latency: z.number().int().nonnegative().nullable(),
     statusCode: z.number().int(),
