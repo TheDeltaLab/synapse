@@ -141,7 +141,7 @@ describe('ProviderRegistry Embedding Configuration', () => {
         it('should return correct default embedding model', () => {
             expect(providerConfig.openai.defaultEmbeddingModel).toBe('text-embedding-3-small');
             expect(providerConfig.google.defaultEmbeddingModel).toBe('text-embedding-004');
-            expect(providerConfig.openrouter.defaultEmbeddingModel).toBe('text-embedding-3-small');
+            expect(providerConfig.openrouter.defaultEmbeddingModel).toBe('qwen/qwen3-embedding-8b');
             expect(providerConfig.anthropic.defaultEmbeddingModel).toBeNull();
         });
     });
