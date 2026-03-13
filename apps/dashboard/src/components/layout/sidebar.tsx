@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, ChevronUp, Key, KeyRound, LogOut, MessageSquare, ScrollText, Users, Zap, Boxes } from 'lucide-react';
+import { BarChart3, Boxes, ChevronUp, Key, KeyRound, LogOut, MessageCircle, MessageSquare, ScrollText, Users, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
@@ -14,15 +14,40 @@ import {
 import type { SessionUser } from '@/lib/auth/jwt';
 import { cn } from '@/lib/utils';
 
-const navigation = [
+interface NavItem {
+    name: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    basePath?: string;
+    children?: NavItem[];
+}
+
+const navigation: NavItem[] = [
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-    { name: 'Playground', href: '/playground', icon: MessageSquare },
+    {
+        name: 'Playground',
+        href: '/playground/chat',
+        icon: MessageSquare,
+        basePath: '/playground',
+        children: [
+            { name: 'Chat', href: '/playground/chat', icon: MessageCircle },
+            { name: 'Embeddings', href: '/playground/embeddings', icon: Boxes },
+        ],
+    },
     { name: 'API Keys', href: '/api-keys', icon: Key },
-    { name: 'Logs', href: '/logs', icon: ScrollText },
-    { name: 'Embeddings', href: '/logs/embeddings', icon: Boxes },
+    {
+        name: 'Logs',
+        href: '/logs/chat',
+        icon: ScrollText,
+        basePath: '/logs',
+        children: [
+            { name: 'Chat', href: '/logs/chat', icon: MessageCircle },
+            { name: 'Embeddings', href: '/logs/embeddings', icon: Boxes },
+        ],
+    },
 ];
 
-const adminNavigation = [
+const adminNavigation: NavItem[] = [
     { name: 'Users', href: '/users', icon: Users },
 ];
 
@@ -71,6 +96,49 @@ export function Sidebar({ user }: SidebarProps) {
             {/* Navigation */}
             <nav className="flex-1 space-y-1 p-4">
                 {allNavigation.map((item) => {
+                    if (item.children) {
+                        const groupBase = item.basePath ?? item.href;
+                        const isGroupActive = pathname.startsWith(groupBase);
+                        return (
+                            <div key={item.name}>
+                                <Link
+                                    href={item.href}
+                                    className={cn(
+                                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                        isGroupActive
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                                    )}
+                                >
+                                    <item.icon className="h-5 w-5" />
+                                    {item.name}
+                                </Link>
+                                {isGroupActive && (
+                                    <div className="ml-4 mt-1 space-y-1">
+                                        {item.children.map((child) => {
+                                            const isChildActive = pathname === child.href || pathname.startsWith(child.href + '/');
+                                            return (
+                                                <Link
+                                                    key={child.name}
+                                                    href={child.href}
+                                                    className={cn(
+                                                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                                        isChildActive
+                                                            ? 'bg-accent text-accent-foreground'
+                                                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                                                    )}
+                                                >
+                                                    <child.icon className="h-4 w-4" />
+                                                    {child.name}
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
+
                     const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                     return (
                         <Link

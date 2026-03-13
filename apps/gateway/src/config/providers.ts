@@ -54,12 +54,12 @@ export const providerConfig = {
     },
     openrouter: {
         apiKey: process.env.OPENROUTER_API_KEY || '',
-        baseURL: envOrUndefined('OPENROUTER_BASE_URL'),
+        baseURL: envOrUndefined('OPENROUTER_BASE_URL') ?? 'https://openrouter.ai/api/v1',
         defaultModel: 'gpt-5-mini',
         models: ['gpt-5-mini', 'gpt-5', 'claude-3-5-sonnet', 'gemini-2.0-flash'],
         // OpenRouter supports embeddings via OpenAI-compatible interface
-        embeddingModels: ['text-embedding-3-small', 'text-embedding-3-large'],
-        defaultEmbeddingModel: 'text-embedding-3-small',
+        embeddingModels: ['text-embedding-3-small', 'text-embedding-3-large', 'qwen/qwen3-embedding-8b'],
+        defaultEmbeddingModel: 'qwen/qwen3-embedding-8b',
     },
 } satisfies Record<string, ProviderConfig>;
 
