@@ -7,6 +7,8 @@ import {
     updateApiKeySchema,
     logsQuerySchema,
     analyticsQuerySchema,
+    embeddingLogsQuerySchema,
+    analyticsRangeSchema,
     HTTP_STATUS,
     type ApiKeyResponse,
     type ApiKeyCreatedResponse,
@@ -558,6 +560,316 @@ admin.get('/logs/analytics', async (c) => {
     };
 
     return c.json(response);
+});
+
+// ============================================================
+// Embedding Provider Endpoints
+// ============================================================
+
+// GET /admin/providers/embedding - List providers that support embeddings
+admin.get('/providers/embedding', (c) => {
+    const availableProviders = providerRegistry.getAvailableEmbeddingProviders();
+
+    const providers = availableProviders.map(name => ({
+        name,
+        models: [...(providerConfig[name].embeddingModels ?? [])],
+        defaultModel: providerConfig[name].defaultEmbeddingModel ?? null,
+        available: true,
+    }));
+
+    // Also return unavailable providers that have embedding model definitions
+    const allProviders = Object.keys(providerConfig) as ProviderName[];
+    const unavailableProviders = allProviders
+        .filter(name => !availableProviders.includes(name))
+        .filter(name => (providerConfig[name].embeddingModels?.length ?? 0) > 0)
+        .map(name => ({
+            name,
+            models: [...(providerConfig[name].embeddingModels ?? [])],
+            defaultModel: providerConfig[name].defaultEmbeddingModel ?? null,
+            available: false,
+        }));
+
+    return c.json({
+        providers: [...providers, ...unavailableProviders],
+    });
+});
+
+// ============================================================
+// Embedding Log Endpoints
+// NOTE: These must be registered BEFORE /logs/:id to avoid
+// "embeddings" being captured as an :id parameter.
+// ============================================================
+
+// GET /admin/logs/embeddings/analytics - Get embedding analytics data
+admin.get('/logs/embeddings/analytics', async (c) => {
+    const rangeParam = c.req.query('range') || '24h';
+    const rangeResult = analyticsRangeSchema.safeParse(rangeParam);
+
+    if (!rangeResult.success) {
+        return c.json(
+            { error: 'Bad Request', message: 'Invalid range parameter' },
+            HTTP_STATUS.BAD_REQUEST,
+        );
+    }
+
+    const range = rangeResult.data;
+
+    // Calculate time range
+    const now = new Date();
+    const startDate = new Date();
+    switch (range) {
+        case '15m':
+            startDate.setMinutes(startDate.getMinutes() - 15);
+            break;
+        case '1h':
+            startDate.setHours(startDate.getHours() - 1);
+            break;
+        case '24h':
+            startDate.setHours(startDate.getHours() - 24);
+            break;
+        case '7d':
+            startDate.setDate(startDate.getDate() - 7);
+            break;
+        case '30d':
+            startDate.setDate(startDate.getDate() - 30);
+            break;
+    }
+
+    const where = {
+        createdAt: { gte: startDate, lte: now },
+        statusCode: 200,
+    };
+
+    // Fetch all logs in range for aggregation
+    const logs = await prisma.embeddingLog.findMany({
+        where,
+        select: {
+            provider: true,
+            model: true,
+            tokens: true,
+            latency: true,
+            createdAt: true,
+        },
+    });
+
+    const totalRequests = logs.length;
+    const uniqueProviders = new Set(logs.map(l => l.provider)).size;
+    const uniqueModels = new Set(logs.map(l => l.model)).size;
+
+    const totalTokens = logs.reduce((sum, l) => sum + (l.tokens || 0), 0);
+    const latencies = logs.filter(l => l.latency !== null).map(l => l.latency!);
+    const avgLatency = latencies.length > 0
+        ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+        : null;
+
+    // Provider stats
+    const providerCounts = logs.reduce((acc, l) => {
+        acc[l.provider] = (acc[l.provider] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    const providerTokens = logs.reduce((acc, l) => {
+        acc[l.provider] = (acc[l.provider] || 0) + (l.tokens || 0);
+        return acc;
+    }, {} as Record<string, number>);
+
+    const providerStats = Object.entries(providerCounts).map(([provider, count]) => ({
+        provider,
+        count,
+        percentage: totalRequests > 0 ? (count / totalRequests) * 100 : 0,
+        totalTokens: providerTokens[provider] || 0,
+    }));
+
+    // Model stats
+    const modelData = logs.reduce((acc, l) => {
+        const key = `${l.provider}:${l.model}`;
+        if (!acc[key]) {
+            acc[key] = { provider: l.provider, model: l.model, count: 0, latencies: [] as number[], tokens: 0 };
+        }
+        acc[key].count++;
+        acc[key].tokens += l.tokens || 0;
+        if (l.latency !== null) acc[key].latencies.push(l.latency);
+        return acc;
+    }, {} as Record<string, { provider: string; model: string; count: number; latencies: number[]; tokens: number }>);
+
+    const modelStats = Object.values(modelData).map(m => ({
+        model: m.model,
+        provider: m.provider,
+        count: m.count,
+        avgLatency: m.latencies.length > 0
+            ? m.latencies.reduce((a, b) => a + b, 0) / m.latencies.length
+            : null,
+        totalTokens: m.tokens,
+    }));
+
+    // Time grouping helper
+    const getTimeKey = (date: Date): string => {
+        if (range === '15m' || range === '1h') {
+            return date.toISOString().slice(0, 16) + ':00Z';
+        } else if (range === '24h') {
+            return date.toISOString().slice(0, 13) + ':00:00Z';
+        } else {
+            return date.toISOString().slice(0, 10);
+        }
+    };
+
+    // Token usage over time
+    const tokenUsageMap = logs.reduce((acc, l) => {
+        const key = getTimeKey(new Date(l.createdAt));
+        if (!acc[key]) {
+            acc[key] = { tokens: 0, count: 0 };
+        }
+        acc[key].tokens += l.tokens || 0;
+        acc[key].count++;
+        return acc;
+    }, {} as Record<string, { tokens: number; count: number }>);
+
+    const tokenUsageOverTime = Object.entries(tokenUsageMap)
+        .map(([date, data]) => ({ date, tokens: data.tokens, count: data.count }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Latency over time with percentiles
+    const calculatePercentile = (arr: number[], percentile: number): number | null => {
+        if (arr.length === 0) return null;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+        return sorted[Math.max(0, index)] ?? null;
+    };
+
+    const latencyByTimeMap = logs.reduce((acc, l) => {
+        if (l.latency === null) return acc;
+        const key = getTimeKey(new Date(l.createdAt));
+        if (!acc[key]) {
+            acc[key] = [];
+        }
+        acc[key].push(l.latency);
+        return acc;
+    }, {} as Record<string, number[]>);
+
+    const latencyOverTime = Object.entries(latencyByTimeMap)
+        .map(([date, lats]) => ({
+            date,
+            p50: calculatePercentile(lats, 50),
+            p90: calculatePercentile(lats, 90),
+            p99: calculatePercentile(lats, 99),
+            avg: lats.length > 0
+                ? lats.reduce((a, b) => a + b, 0) / lats.length
+                : null,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    return c.json({
+        totalRequests,
+        totalTokens,
+        avgLatency,
+        uniqueProviders,
+        uniqueModels,
+        providerStats,
+        modelStats,
+        tokenUsageOverTime,
+        latencyOverTime,
+    });
+});
+
+// GET /admin/logs/embeddings - List embedding logs with pagination and filters
+admin.get('/logs/embeddings', async (c) => {
+    const queryParams = {
+        page: c.req.query('page'),
+        limit: c.req.query('limit'),
+        provider: c.req.query('provider'),
+        model: c.req.query('model'),
+        startDate: c.req.query('startDate'),
+        endDate: c.req.query('endDate'),
+        apiKeyId: c.req.query('apiKeyId'),
+    };
+
+    const parsed = embeddingLogsQuerySchema.safeParse(queryParams);
+    if (!parsed.success) {
+        return c.json(
+            {
+                error: 'Validation Error',
+                message: 'Invalid query parameters',
+                details: parsed.error.flatten().fieldErrors,
+            },
+            HTTP_STATUS.BAD_REQUEST,
+        );
+    }
+
+    const { page, limit, provider, model, startDate, endDate, apiKeyId } = parsed.data;
+
+    // Build where clause
+    const where: Record<string, unknown> = {};
+    if (provider) where.provider = provider;
+    if (model) where.model = model;
+    if (apiKeyId) where.apiKeyId = apiKeyId;
+    if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) (where.createdAt as Record<string, Date>).gte = new Date(startDate);
+        if (endDate) (where.createdAt as Record<string, Date>).lte = new Date(endDate);
+    }
+
+    const [logs, total] = await Promise.all([
+        prisma.embeddingLog.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+            select: {
+                id: true,
+                apiKeyId: true,
+                provider: true,
+                model: true,
+                inputCount: true,
+                dimensions: true,
+                requestContent: true,
+                tokens: true,
+                latency: true,
+                statusCode: true,
+                createdAt: true,
+            },
+        }),
+        prisma.embeddingLog.count({ where }),
+    ]);
+
+    return c.json({
+        logs: logs.map(log => ({
+            ...log,
+            createdAt: log.createdAt.toISOString(),
+        })),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+    });
+});
+
+// GET /admin/logs/embeddings/:id - Get single embedding log detail
+admin.get('/logs/embeddings/:id', async (c) => {
+    const { id } = c.req.param();
+
+    const log = await prisma.embeddingLog.findUnique({
+        where: { id },
+        include: {
+            apiKey: {
+                select: {
+                    id: true,
+                    name: true,
+                },
+            },
+        },
+    });
+
+    if (!log) {
+        return c.json(
+            { error: 'Not Found', message: 'Embedding log not found' },
+            HTTP_STATUS.NOT_FOUND,
+        );
+    }
+
+    return c.json({
+        ...log,
+        createdAt: log.createdAt.toISOString(),
+    });
 });
 
 // GET /admin/logs/:id - Get single log with decrypted content

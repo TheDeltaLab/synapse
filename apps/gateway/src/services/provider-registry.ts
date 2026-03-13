@@ -3,7 +3,7 @@ import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { customProvider, type LanguageModel } from 'ai';
+import { customProvider, type LanguageModel, type EmbeddingModel } from 'ai';
 import { providerConfig, type ProviderName } from '../config/providers.js';
 
 type LanguageModelV3 = Extract<LanguageModel, { specificationVersion: 'v3' }>;
@@ -119,6 +119,7 @@ export const modelProvider: ModelProvider = customProvider(
 
 export class ProviderRegistry {
     private providers: Map<ProviderName, any> = new Map();
+    private embeddingProviders: Map<ProviderName, any> = new Map();
 
     constructor() {
         this.registerProviders();
@@ -129,6 +130,7 @@ export class ProviderRegistry {
         if (providerConfig.openai.apiKey) {
             const openai = createOpenAI({
                 apiKey: providerConfig.openai.apiKey,
+                baseURL: providerConfig.openai.baseURL,
             });
             this.providers.set('openai', openai);
         }
@@ -137,6 +139,7 @@ export class ProviderRegistry {
         if (providerConfig.anthropic.apiKey) {
             const anthropic = createAnthropic({
                 apiKey: providerConfig.anthropic.apiKey,
+                baseURL: providerConfig.anthropic.baseURL,
             });
             this.providers.set('anthropic', anthropic);
         }
@@ -145,6 +148,7 @@ export class ProviderRegistry {
         if (providerConfig.google.apiKey) {
             const google = createGoogleGenerativeAI({
                 apiKey: providerConfig.google.apiKey,
+                baseURL: providerConfig.google.baseURL,
             });
             this.providers.set('google', google);
         }
@@ -153,8 +157,22 @@ export class ProviderRegistry {
         if (providerConfig.openrouter.apiKey) {
             const openrouter = createOpenRouter({
                 apiKey: providerConfig.openrouter.apiKey,
+                baseURL: providerConfig.openrouter.baseURL,
             });
             this.providers.set('openrouter', openrouter);
+
+            // Register a separate OpenAI SDK instance for OpenRouter embeddings.
+            // The native @openrouter/ai-sdk-provider does not forward the `dimensions`
+            // parameter in its doEmbed() implementation. Since OpenRouter's embedding
+            // API is fully OpenAI-compatible, we use @ai-sdk/openai which correctly
+            // passes `dimensions` through providerOptions.
+            if (providerConfig.openrouter.embeddingModels.length > 0) {
+                const openrouterEmbedding = createOpenAI({
+                    apiKey: providerConfig.openrouter.apiKey,
+                    baseURL: providerConfig.openrouter.baseURL,
+                });
+                this.embeddingProviders.set('openrouter', openrouterEmbedding);
+            }
         }
     }
 
@@ -177,6 +195,76 @@ export class ProviderRegistry {
 
     getAvailableProviders(): ProviderName[] {
         return Array.from(this.providers.keys());
+    }
+
+    // ============================================================
+    // Embedding Methods
+    // ============================================================
+
+    /**
+     * Check if a provider supports embeddings
+     */
+    hasEmbeddingSupport(provider: ProviderName): boolean {
+        const config = providerConfig[provider];
+        return (
+            this.hasProvider(provider)
+            && config.embeddingModels
+            && config.embeddingModels.length > 0
+        );
+    }
+
+    /**
+     * Get list of providers that support embeddings
+     */
+    getAvailableEmbeddingProviders(): ProviderName[] {
+        return this.getAvailableProviders().filter(p =>
+            this.hasEmbeddingSupport(p),
+        );
+    }
+
+    /**
+     * Get embedding model instance.
+     * Checks embeddingProviders first (for provider-specific overrides),
+     * then falls back to the general provider.
+     * @throws Error if provider not found or doesn't support embeddings
+     */
+    getEmbeddingModel(provider: ProviderName, modelId: string): EmbeddingModel {
+        if (!this.hasProvider(provider)) {
+            throw new Error(`Provider ${provider} not found or not configured`);
+        }
+
+        if (!this.hasEmbeddingSupport(provider)) {
+            throw new Error(`Provider ${provider} does not support embeddings`);
+        }
+
+        // Prefer dedicated embedding provider if registered (e.g. OpenRouter uses
+        // an @ai-sdk/openai instance so that `dimensions` is forwarded correctly)
+        const embeddingProvider = this.embeddingProviders.get(provider);
+        if (embeddingProvider && typeof embeddingProvider.textEmbeddingModel === 'function') {
+            return embeddingProvider.textEmbeddingModel(modelId);
+        }
+
+        // Fall back to the general provider
+        const providerInstance = this.getProvider(provider);
+        if (typeof providerInstance.textEmbeddingModel === 'function') {
+            return providerInstance.textEmbeddingModel(modelId);
+        }
+
+        throw new Error(`Provider ${provider} does not expose embedding model method`);
+    }
+
+    /**
+     * Get list of embedding models for a provider
+     */
+    getEmbeddingModels(provider: ProviderName): readonly string[] {
+        return providerConfig[provider].embeddingModels;
+    }
+
+    /**
+     * Get default embedding model for a provider
+     */
+    getDefaultEmbeddingModel(provider: ProviderName): string | null {
+        return providerConfig[provider].defaultEmbeddingModel;
     }
 }
 

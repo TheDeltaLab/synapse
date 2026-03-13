@@ -5,6 +5,7 @@ import { errorHandler } from './middleware/error.js';
 import { loggerMiddleware } from './middleware/logger.js';
 import { admin } from './routes/admin.js';
 import { handleChatCompletion } from './routes/v1/chat.js';
+import { handleEmbeddings } from './routes/v1/embeddings.js';
 
 const app = new Hono();
 
@@ -26,6 +27,7 @@ app.route('/admin', admin);
 
 // API routes with authentication
 app.post('/v1/chat/completions', authMiddleware, handleChatCompletion);
+app.post('/v1/embeddings', authMiddleware, handleEmbeddings);
 
 // 404 handler
 app.notFound((c) => {

@@ -21,7 +21,8 @@ model ApiKey {
   createdAt   DateTime  @default(now())
   expiresAt   DateTime?
 
-  requestLogs RequestLog[]
+  requestLogs   RequestLog[]
+  embeddingLogs EmbeddingLog[]
 
   @@index([key])
   @@map("api_keys")
@@ -61,6 +62,36 @@ model RequestLog {
   @@index([createdAt])
   @@index([cached])
   @@map("request_logs")
+}
+
+model EmbeddingLog {
+  id          String   @id @default(uuid())
+  apiKeyId    String
+  apiKey      ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  // Request metadata
+  provider    String   // openai, google, openrouter
+  model       String   // text-embedding-3-small, text-embedding-004, etc.
+
+  // Request details
+  inputCount      Int      // Number of input texts (> 1 for batch requests)
+  dimensions      Int?     // Requested dimensions (if specified)
+  requestContent  String?  @db.Text // Raw input text(s) as JSON stringified array
+
+  // Usage stats
+  tokens      Int?     // Token consumption
+
+  // Performance metrics
+  latency     Int?     // Latency in milliseconds
+  statusCode  Int      // HTTP status code
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
+  @@index([provider, model])
+  @@index([createdAt])
+  @@map("embedding_logs")
 }
 
 enum UserRole {
