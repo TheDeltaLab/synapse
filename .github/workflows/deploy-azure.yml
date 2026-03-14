@@ -131,11 +131,7 @@ jobs:
     environment: ${{ needs.prepare.outputs.environment }}
     permissions:
       id-token: write  # Required for OIDC authentication
-      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -153,6 +149,10 @@ jobs:
             --name ${{ needs.prepare.outputs.gateway_app }} \
             --resource-group ${{ needs.prepare.outputs.resource_group }} \
             --image ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}
+          az containerapp ingress update \
+            --name ${{ needs.prepare.outputs.gateway_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --target-port 3000
 
       - name: Verify deployment
         run: |
@@ -168,11 +168,7 @@ jobs:
     environment: ${{ needs.prepare.outputs.environment }}
     permissions:
       id-token: write  # Required for OIDC authentication
-      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -191,6 +187,10 @@ jobs:
             --resource-group ${{ needs.prepare.outputs.resource_group }} \
             --image ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }} \
             --set-env-vars GATEWAY_URL=${{ vars.GATEWAY_URL }}
+          az containerapp ingress update \
+            --name ${{ needs.prepare.outputs.dashboard_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --target-port 3001
 
       - name: Verify deployment
         run: |
