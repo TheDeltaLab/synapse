@@ -143,13 +143,16 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # IMPORTANT: Use `az containerapp update` directly instead of azure/container-apps-deploy-action.
+      # The GitHub Action internally calls `az containerapp up`, which requires broad permissions
+      # (e.g., managing environments, registries) and causes 'Forbidden' errors with OIDC credentials
+      # that only have Container App-level access. Do NOT replace this with the GitHub Action.
       - name: Deploy Gateway to Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}
-          containerAppName: ${{ needs.prepare.outputs.gateway_app }}
-          resourceGroup: ${{ needs.prepare.outputs.resource_group }}
-          containerAppEnvironment: ${{ vars.CONTAINER_APP_ENV }}
+        run: |
+          az containerapp update \
+            --name ${{ needs.prepare.outputs.gateway_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --image ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}
 
       - name: Verify deployment
         run: |
@@ -177,15 +180,17 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # IMPORTANT: Use `az containerapp update` directly instead of azure/container-apps-deploy-action.
+      # The GitHub Action internally calls `az containerapp up`, which requires broad permissions
+      # (e.g., managing environments, registries) and causes 'Forbidden' errors with OIDC credentials
+      # that only have Container App-level access. Do NOT replace this with the GitHub Action.
       - name: Deploy Dashboard to Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}
-          containerAppName: ${{ needs.prepare.outputs.dashboard_app }}
-          resourceGroup: ${{ needs.prepare.outputs.resource_group }}
-          targetPort: 3001
-          environmentVariables: GATEWAY_URL=${{ vars.GATEWAY_URL }}
-          containerAppEnvironment: ${{ vars.CONTAINER_APP_ENV }}
+        run: |
+          az containerapp update \
+            --name ${{ needs.prepare.outputs.dashboard_app }} \
+            --resource-group ${{ needs.prepare.outputs.resource_group }} \
+            --image ${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }} \
+            --set-env-vars GATEWAY_URL=${{ vars.GATEWAY_URL }}
 
       - name: Verify deployment
         run: |
