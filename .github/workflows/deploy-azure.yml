@@ -149,6 +149,7 @@ jobs:
           imageToDeploy: ${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}
           containerAppName: ${{ needs.prepare.outputs.gateway_app }}
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
+          containerAppEnvironment: ${{ vars.CONTAINER_APP_ENV }}
 
       - name: Verify deployment
         run: |
@@ -184,6 +185,7 @@ jobs:
           resourceGroup: ${{ needs.prepare.outputs.resource_group }}
           targetPort: 3001
           environmentVariables: GATEWAY_URL=${{ vars.GATEWAY_URL }}
+          containerAppEnvironment: ${{ vars.CONTAINER_APP_ENV }}
 
       - name: Verify deployment
         run: |
