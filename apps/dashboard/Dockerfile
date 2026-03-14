@@ -39,11 +39,18 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/dal/node_modules ./packages/dal/node_modules
+COPY --from=deps /app/packages/config/node_modules ./packages/config/node_modules
 
 # Copy workspace files
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/dashboard/ ./apps/dashboard/
 COPY packages/shared/ ./packages/shared/
+COPY packages/dal/ ./packages/dal/
+COPY packages/config/ ./packages/config/
+
+# Generate Prisma client (required by @synapse/dal)
+RUN pnpm --filter @synapse/dal db:generate
 
 # Build dashboard and all its workspace dependencies (... suffix includes deps automatically)
 RUN pnpm --filter @synapse/dashboard... build
