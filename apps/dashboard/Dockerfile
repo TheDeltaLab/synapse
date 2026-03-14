@@ -45,8 +45,8 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/dashboard/ ./apps/dashboard/
 COPY packages/shared/ ./packages/shared/
 
-# Build dashboard (shared package is used directly as TypeScript source)
-RUN pnpm --filter @synapse/dashboard build
+# Build dashboard and all its workspace dependencies (... suffix includes deps automatically)
+RUN pnpm --filter @synapse/dashboard... build
 
 # ============================================
 # Stage 4: Production runner
