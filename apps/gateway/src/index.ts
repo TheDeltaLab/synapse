@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import app from './app.js';
 import { providerConfig, type ProviderName } from './config/providers.js';
+import { redisService } from './services/redis-service.js';
 
 const port = parseInt(process.env.PORT || '3000', 10);
 
@@ -15,6 +16,15 @@ serve({
 console.log(`✅ Gateway server running at http://localhost:${port}`);
 console.log(`   Health check: http://localhost:${port}/health`);
 console.log(`   API endpoint: http://localhost:${port}/v1/chat/completions`);
+
+// Connect to Redis for caching (non-blocking)
+redisService.connect().then(() => {
+    if (redisService.available) {
+        console.log('\n🗄️  Redis connected — LLM response caching enabled');
+    } else {
+        console.log('\n⚠️  Redis not available — LLM response caching disabled');
+    }
+});
 
 // Log configured providers
 const allProviders = Object.keys(providerConfig) as ProviderName[];

@@ -20,6 +20,7 @@
     "@ai-sdk/deepseek": "^2.0.22",
     "@ai-sdk/google": "^3.0.37",
     "@ai-sdk/openai": "^3.0.39",
+    "@ai-sdk/provider": "^3.0.8",
     "@hono/node-server": "catalog:",
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@prisma/adapter-pg": "^7.4.2",
@@ -30,7 +31,7 @@
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.7",
     "hono": "catalog:",
-    "ioredis": "^5.4.2",
+    "redis": "^5.6.0",
     "pg": "^8.20.0"
   },
   "devDependencies": {
