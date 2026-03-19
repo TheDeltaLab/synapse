@@ -6,6 +6,7 @@ import { loggerMiddleware } from './middleware/logger.js';
 import { admin } from './routes/admin.js';
 import { handleChatCompletion } from './routes/v1/chat.js';
 import { handleEmbeddings } from './routes/v1/embeddings.js';
+import { redisService } from './services/redis-service.js';
 
 const app = new Hono();
 
@@ -19,7 +20,14 @@ app.use('*', cors({
 
 // Health check endpoint (no auth required)
 app.get('/health', (c) => {
-    return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+    return c.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        cache: {
+            enabled: redisService.available,
+            provider: 'redis',
+        },
+    });
 });
 
 // Admin routes (no auth for now)

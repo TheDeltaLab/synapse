@@ -1,10 +1,12 @@
-import { streamText } from 'ai';
+import { streamText, wrapLanguageModel } from 'ai';
 import type { Context } from 'hono';
 import type { ProviderName } from '@synapse/config/providers.js';
 import { prisma, encryptContent, isEncryptionConfigured } from '@synapse/dal';
 import { providerRegistry } from '@synapse/services/provider-registry.js';
+import { redisService } from '@synapse/services/redis-service.js';
 import { chatCompletionRequestSchema, HTTP_STATUS, type CacheType } from '@synapse/shared';
 import { getAdapter } from '../../adapters/index.js';
+import { lmCacheMiddleware, cacheStore, type CacheContext } from '../../middleware/cache.js';
 
 interface LogRequestParams {
     apiKeyId: string;
@@ -55,12 +57,118 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
 
         const startTime = Date.now();
 
-        // Get the model instance
-        const model = providerRegistry.getModel(provider, modelId);
+        // Get the model instance, optionally wrapped with cache middleware
+        const baseModel = providerRegistry.getModel(provider, modelId);
+        const model = redisService.available
+            ? wrapLanguageModel({ model: baseModel, middleware: lmCacheMiddleware })
+            : baseModel;
 
-        // Handle streaming response
-        if (request.stream) {
-            const result = streamText({
+        // Initialize cache context for this request
+        const cacheContext: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
+
+        return cacheStore.run(cacheContext, async () => {
+            // Handle streaming response
+            if (request.stream) {
+                const result = streamText({
+                    model,
+                    messages: request.messages
+                        .filter(msg => msg.role !== 'function')
+                        .map(msg => ({
+                            role: msg.role as 'system' | 'user' | 'assistant',
+                            content: msg.content,
+                        })),
+                    temperature: request.temperature,
+                    maxOutputTokens: request.max_tokens,
+                    topP: request.top_p,
+                });
+
+                // Get the streaming adapter based on x-synapse-response-style header
+                const responseStyle = c.req.header('x-synapse-response-style') || 'openai';
+                const adapter = getAdapter(responseStyle);
+
+                // Create SSE stream using the adapter
+                const chatId = `chatcmpl-${Date.now()}`;
+                const created = Math.floor(Date.now() / 1000);
+                const encoder = new TextEncoder();
+
+                const metadata = {
+                    id: chatId,
+                    model: modelId,
+                    created,
+                    index: 0,
+                };
+
+                // Use TransformStream to convert text chunks to SSE format
+                const { readable, writable } = new TransformStream();
+                const writer = writable.getWriter();
+
+                // Collect response for logging
+                let fullResponse = '';
+
+                // Process stream in background
+                (async () => {
+                    try {
+                        for await (const chunk of result.textStream) {
+                            fullResponse += chunk;
+                            const formatted = adapter.formatChunk(chunk, metadata);
+                            await writer.write(encoder.encode(formatted));
+                        }
+
+                        // Send final chunk with finish_reason
+                        await writer.write(encoder.encode(adapter.formatFinalChunk(metadata)));
+                        await writer.write(encoder.encode(adapter.formatDone()));
+
+                        // Log request after stream completes
+                        const usage = await result.usage;
+                        const latency = Date.now() - startTime;
+                        logRequest({
+                            apiKeyId: apiKey.id,
+                            provider,
+                            model: modelId,
+                            statusCode: 200,
+                            latency,
+                            inputTokens: usage.inputTokens,
+                            outputTokens: usage.outputTokens,
+                            totalTokens: usage.totalTokens,
+                            promptMessages: request.messages.map(msg => ({
+                                role: msg.role,
+                                content: msg.content,
+                            })),
+                            responseContent: fullResponse,
+                            cached: cacheContext.hit,
+                            cacheType: cacheContext.hit ? 'exact' : 'none',
+                            cacheTtl: cacheContext.ttl || undefined,
+                        });
+                    } catch (error) {
+                        console.error('Stream processing error:', error);
+                        // Try to send error to client
+                        try {
+                            const errorData = {
+                                error: {
+                                    message: error instanceof Error ? error.message : 'Stream error',
+                                    type: 'stream_error',
+                                },
+                            };
+                            await writer.write(encoder.encode(`data: ${JSON.stringify(errorData)}\n\n`));
+                        } catch {
+                            // Ignore write errors
+                        }
+                    } finally {
+                        try {
+                            await writer.close();
+                        } catch {
+                            // Ignore close errors
+                        }
+                    }
+                })();
+
+                return new Response(readable, {
+                    headers: adapter.getResponseHeaders(),
+                });
+            }
+
+            // Handle non-streaming response
+            const result = await streamText({
                 model,
                 messages: request.messages
                     .filter(msg => msg.role !== 'function')
@@ -73,146 +181,52 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
                 topP: request.top_p,
             });
 
-            // Get the streaming adapter based on x-synapse-response-style header
-            const responseStyle = c.req.header('x-synapse-response-style') || 'openai';
-            const adapter = getAdapter(responseStyle);
+            const text = await result.text;
+            const usage = await result.usage;
+            const latency = Date.now() - startTime;
 
-            // Create SSE stream using the adapter
-            const chatId = `chatcmpl-${Date.now()}`;
-            const created = Math.floor(Date.now() / 1000);
-            const encoder = new TextEncoder();
-
-            const metadata = {
-                id: chatId,
+            // Log request with detailed data
+            await logRequest({
+                apiKeyId: apiKey.id,
+                provider,
                 model: modelId,
-                created,
-                index: 0,
-            };
-
-            // Use TransformStream to convert text chunks to SSE format
-            const { readable, writable } = new TransformStream();
-            const writer = writable.getWriter();
-
-            // Collect response for logging
-            let fullResponse = '';
-
-            // Process stream in background
-            (async () => {
-                try {
-                    for await (const chunk of result.textStream) {
-                        fullResponse += chunk;
-                        const formatted = adapter.formatChunk(chunk, metadata);
-                        await writer.write(encoder.encode(formatted));
-                    }
-
-                    // Send final chunk with finish_reason
-                    await writer.write(encoder.encode(adapter.formatFinalChunk(metadata)));
-                    await writer.write(encoder.encode(adapter.formatDone()));
-
-                    // Log request after stream completes
-                    const usage = await result.usage;
-                    const latency = Date.now() - startTime;
-                    logRequest({
-                        apiKeyId: apiKey.id,
-                        provider,
-                        model: modelId,
-                        statusCode: 200,
-                        latency,
-                        inputTokens: usage.inputTokens,
-                        outputTokens: usage.outputTokens,
-                        totalTokens: usage.totalTokens,
-                        promptMessages: request.messages.map(msg => ({
-                            role: msg.role,
-                            content: msg.content,
-                        })),
-                        responseContent: fullResponse,
-                        cached: false,
-                    });
-                } catch (error) {
-                    console.error('Stream processing error:', error);
-                    // Try to send error to client
-                    try {
-                        const errorData = {
-                            error: {
-                                message: error instanceof Error ? error.message : 'Stream error',
-                                type: 'stream_error',
-                            },
-                        };
-                        await writer.write(encoder.encode(`data: ${JSON.stringify(errorData)}\n\n`));
-                    } catch {
-                        // Ignore write errors
-                    }
-                } finally {
-                    try {
-                        await writer.close();
-                    } catch {
-                        // Ignore close errors
-                    }
-                }
-            })();
-
-            return new Response(readable, {
-                headers: adapter.getResponseHeaders(),
-            });
-        }
-
-        // Handle non-streaming response
-        const result = await streamText({
-            model,
-            messages: request.messages
-                .filter(msg => msg.role !== 'function')
-                .map(msg => ({
-                    role: msg.role as 'system' | 'user' | 'assistant',
+                statusCode: 200,
+                latency,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                totalTokens: usage.totalTokens,
+                promptMessages: request.messages.map(msg => ({
+                    role: msg.role,
                     content: msg.content,
                 })),
-            temperature: request.temperature,
-            maxOutputTokens: request.max_tokens,
-            topP: request.top_p,
-        });
+                responseContent: text,
+                cached: cacheContext.hit,
+                cacheType: cacheContext.hit ? 'exact' : 'none',
+                cacheTtl: cacheContext.ttl || undefined,
+            });
 
-        const text = await result.text;
-        const usage = await result.usage;
-        const latency = Date.now() - startTime;
-
-        // Log request with detailed data
-        await logRequest({
-            apiKeyId: apiKey.id,
-            provider,
-            model: modelId,
-            statusCode: 200,
-            latency,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            totalTokens: usage.totalTokens,
-            promptMessages: request.messages.map(msg => ({
-                role: msg.role,
-                content: msg.content,
-            })),
-            responseContent: text,
-            cached: false,
-        });
-
-        // Return OpenAI-compatible response
-        return c.json({
-            id: `chatcmpl-${Date.now()}`,
-            object: 'chat.completion',
-            created: Math.floor(Date.now() / 1000),
-            model: modelId,
-            choices: [
-                {
-                    index: 0,
-                    message: {
-                        role: 'assistant',
-                        content: text,
+            // Return OpenAI-compatible response
+            return c.json({
+                id: `chatcmpl-${Date.now()}`,
+                object: 'chat.completion',
+                created: Math.floor(Date.now() / 1000),
+                model: modelId,
+                choices: [
+                    {
+                        index: 0,
+                        message: {
+                            role: 'assistant',
+                            content: text,
+                        },
+                        finish_reason: 'stop',
                     },
-                    finish_reason: 'stop',
+                ],
+                usage: {
+                    prompt_tokens: usage.inputTokens,
+                    completion_tokens: usage.outputTokens,
+                    total_tokens: usage.totalTokens,
                 },
-            ],
-            usage: {
-                prompt_tokens: usage.inputTokens,
-                completion_tokens: usage.outputTokens,
-                total_tokens: usage.totalTokens,
-            },
+            });
         });
     } catch (error) {
         console.error('Chat completion error:', error);

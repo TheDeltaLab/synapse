@@ -129,6 +129,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.39
         version: 3.0.39(zod@3.25.76)
+      '@ai-sdk/provider':
+        specifier: ^3.0.8
+        version: 3.0.8
       '@hono/node-server':
         specifier: 'catalog:'
         version: 1.19.9(hono@4.12.8)
