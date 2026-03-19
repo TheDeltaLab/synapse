@@ -143,6 +143,68 @@ Copy `.env.example` and configure:
 - **Code Comments**: All code comments MUST be written in English, not Chinese or other languages. This includes JSDoc comments, inline comments, and TODO comments.
 - **Testing**: When adding or modifying code, always write corresponding tests. Tests should be placed in `__tests__` directories alongside the source files. Run `pnpm test` to execute tests. Ensure all tests pass before considering a task complete.
 
+## Contributing (Conventional Commits)
+
+See `CONTRIBUTING.md` for the full guide. Below is the essential reference for Claude Code.
+
+### Commit & PR Title Format
+
+All commits to `main` and all PR titles **must** follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```
+type(scope): description
+```
+
+- All lowercase, imperative mood ("add feature" not "added feature").
+- We use **Squash and Merge**, so the PR title becomes the final commit on `main`.
+
+### Types
+
+| Type | When to use | Changelog | Version Bump |
+|------|-------------|-----------|-------------|
+| `feat` | New feature | Features | Minor |
+| `fix` | Bug fix | Bug Fixes | Patch |
+| `perf` | Performance improvement | Performance | Patch |
+| `docs` | Documentation only | Documentation | — |
+| `refactor` | Code restructuring (no behavior change) | Hidden | — |
+| `test` | Adding/updating tests | Hidden | — |
+| `ci` | CI/CD, GitHub Actions, deployment scripts | Hidden | — |
+| `build` | Build system, external dependencies | Hidden | — |
+| `chore` | Maintenance, dependency updates | Hidden | — |
+| `style` | Code formatting, whitespace | Hidden | — |
+
+Append `!` for breaking changes: `feat(gateway)!: redesign auth middleware` (triggers major bump).
+
+### Scopes
+
+Use the app or package name. For cross-cutting changes, use a feature-based scope.
+
+**Apps**: `gateway`, `dashboard`, `mock`
+**Packages**: `shared`, `dal`, `config`, `eslint-config`
+**Features**: `auth`, `api`, `chat`, `analytics`, `logs`, `playground`, `provider`, `embedding`, `cache`, `deps`, `infra`, `deploy`, `docker`
+
+### Examples
+
+```
+feat(gateway): add LLM response caching via Redis
+fix(dal): resolve connection pool leak on shutdown
+feat(dashboard): add dark mode toggle
+chore(deps): update typescript to v5.8
+ci(docker): add multi-platform build support
+test(gateway): add cache middleware unit tests
+docs: update Azure OIDC setup guide
+```
+
+### Pre-Commit Checklist
+
+Always run these before committing or creating a PR:
+
+```bash
+pnpm lint          # 0 errors required
+pnpm type-check    # 0 new errors required
+pnpm test          # All new/modified tests must pass
+```
+
 ## CI/CD
 
 ### GitHub Actions Workflows
