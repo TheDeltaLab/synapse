@@ -115,7 +115,7 @@ synapse/
 - **Dashboard**: Next.js 14 with App Router
 - **AI SDKs**: Vercel AI SDK (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`)
 - **ORM**: Prisma 7.4 with PostgreSQL
-- **Caching**: ioredis
+- **Caching**: redis (node-redis)
 - **Charts**: Recharts (dashboard analytics)
 - **Build**: tsup (esbuild-based), pnpm workspaces
 - **Validation**: Zod schemas

@@ -1,11 +1,11 @@
-import Redis from 'ioredis';
+import { createClient, type RedisClientType } from 'redis';
 
 /**
  * Redis service singleton for caching LLM responses.
  * Gracefully degrades — never throws on connection or operation failures.
  */
 export class RedisService {
-    private client: Redis | null = null;
+    private client: RedisClientType | null = null;
     private connected = false;
 
     /**
@@ -27,24 +27,25 @@ export class RedisService {
         }
 
         try {
-            this.client = new Redis(url, {
-                lazyConnect: true,
-                maxRetriesPerRequest: 1,
-                retryStrategy(times) {
-                    if (times > 3) return null; // Stop retrying after 3 attempts
-                    return Math.min(times * 200, 2000);
+            this.client = createClient({
+                url,
+                socket: {
+                    reconnectStrategy(retries: number) {
+                        if (retries > 3) return new Error('Max retries exceeded');
+                        return Math.min(retries * 200, 2000);
+                    },
                 },
             });
 
-            this.client.on('connect', () => {
+            this.client.on('ready', () => {
                 this.connected = true;
             });
 
-            this.client.on('close', () => {
+            this.client.on('end', () => {
                 this.connected = false;
             });
 
-            this.client.on('error', (err) => {
+            this.client.on('error', (err: Error) => {
                 console.error('Redis error:', err.message);
                 this.connected = false;
             });
@@ -63,7 +64,7 @@ export class RedisService {
     async disconnect(): Promise<void> {
         try {
             if (this.client) {
-                await this.client.quit();
+                await this.client.close();
                 this.client = null;
                 this.connected = false;
             }
@@ -95,7 +96,7 @@ export class RedisService {
         try {
             if (!this.client || !this.connected) return;
             if (ttlSeconds) {
-                await this.client.set(key, value, 'EX', ttlSeconds);
+                await this.client.set(key, value, { EX: ttlSeconds });
             } else {
                 await this.client.set(key, value);
             }

@@ -1,28 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Create mock methods that persist across Redis instances
+// Create mock methods that persist across createClient calls
 const mockConnect = vi.fn();
-const mockQuit = vi.fn();
+const mockClose = vi.fn();
 const mockGet = vi.fn();
 const mockSet = vi.fn();
 const mockDel = vi.fn();
 const mockOn = vi.fn();
 
-vi.mock('ioredis', () => {
-    // Use a real class so `new Redis(...)` works
-    class MockRedis {
-        connect = mockConnect;
-        quit = mockQuit;
-        get = mockGet;
-        set = mockSet;
-        del = mockDel;
-        on = mockOn;
-
-        constructor(_url: string, _options?: any) {
-            // Constructor is called by RedisService.connect()
-        }
-    }
-    return { default: MockRedis };
+vi.mock('redis', () => {
+    return {
+        createClient: vi.fn(() => ({
+            connect: mockConnect,
+            close: mockClose,
+            get: mockGet,
+            set: mockSet,
+            del: mockDel,
+            on: mockOn,
+        })),
+    };
 });
 
 import { RedisService } from '../../services/redis-service.js';
@@ -50,9 +46,9 @@ describe('RedisService', () => {
             process.env.REDIS_URL = 'redis://localhost:6379';
             mockConnect.mockResolvedValue(undefined);
 
-            // Simulate the 'connect' event being fired when on() is called
+            // Simulate the 'ready' event being fired when on() is called
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') {
+                if (event === 'ready') {
                     cb();
                 }
             });
@@ -70,23 +66,23 @@ describe('RedisService', () => {
             expect(service.available).toBe(false);
         });
 
-        it('should set available to false on close event', async () => {
+        it('should set available to false on end event', async () => {
             process.env.REDIS_URL = 'redis://localhost:6379';
             mockConnect.mockResolvedValue(undefined);
 
-            let connectCb: (() => void) | undefined;
-            let closeCb: (() => void) | undefined;
+            let readyCb: (() => void) | undefined;
+            let endCb: (() => void) | undefined;
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') connectCb = cb;
-                if (event === 'close') closeCb = cb;
+                if (event === 'ready') readyCb = cb;
+                if (event === 'end') endCb = cb;
             });
 
             await service.connect();
-            connectCb?.();
+            readyCb?.();
             expect(service.available).toBe(true);
 
-            closeCb?.();
+            endCb?.();
             expect(service.available).toBe(false);
         });
 
@@ -94,16 +90,16 @@ describe('RedisService', () => {
             process.env.REDIS_URL = 'redis://localhost:6379';
             mockConnect.mockResolvedValue(undefined);
 
-            let connectCb: (() => void) | undefined;
+            let readyCb: (() => void) | undefined;
             let errorCb: ((err: Error) => void) | undefined;
 
             mockOn.mockImplementation((event: string, cb: any) => {
-                if (event === 'connect') connectCb = cb;
+                if (event === 'ready') readyCb = cb;
                 if (event === 'error') errorCb = cb;
             });
 
             await service.connect();
-            connectCb?.();
+            readyCb?.();
             expect(service.available).toBe(true);
 
             errorCb?.(new Error('Redis error'));
@@ -115,16 +111,16 @@ describe('RedisService', () => {
         it('should disconnect gracefully', async () => {
             process.env.REDIS_URL = 'redis://localhost:6379';
             mockConnect.mockResolvedValue(undefined);
-            mockQuit.mockResolvedValue(undefined);
+            mockClose.mockResolvedValue(undefined);
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
             await service.disconnect();
             expect(service.available).toBe(false);
-            expect(mockQuit).toHaveBeenCalled();
+            expect(mockClose).toHaveBeenCalled();
         });
 
         it('should handle disconnect when not connected', async () => {
@@ -135,10 +131,10 @@ describe('RedisService', () => {
         it('should handle disconnect errors gracefully', async () => {
             process.env.REDIS_URL = 'redis://localhost:6379';
             mockConnect.mockResolvedValue(undefined);
-            mockQuit.mockRejectedValue(new Error('Quit error'));
+            mockClose.mockRejectedValue(new Error('Close error'));
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
@@ -159,7 +155,7 @@ describe('RedisService', () => {
             mockGet.mockResolvedValue('cached-value');
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
@@ -174,7 +170,7 @@ describe('RedisService', () => {
             mockGet.mockRejectedValue(new Error('Get failed'));
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
@@ -195,12 +191,12 @@ describe('RedisService', () => {
             mockSet.mockResolvedValue('OK');
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
             await service.set('key', 'value', 3600);
-            expect(mockSet).toHaveBeenCalledWith('key', 'value', 'EX', 3600);
+            expect(mockSet).toHaveBeenCalledWith('key', 'value', { EX: 3600 });
         });
 
         it('should set value without TTL', async () => {
@@ -209,7 +205,7 @@ describe('RedisService', () => {
             mockSet.mockResolvedValue('OK');
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
@@ -223,7 +219,7 @@ describe('RedisService', () => {
             mockSet.mockRejectedValue(new Error('Set failed'));
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
@@ -244,7 +240,7 @@ describe('RedisService', () => {
             mockDel.mockResolvedValue(1);
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
@@ -258,7 +254,7 @@ describe('RedisService', () => {
             mockDel.mockRejectedValue(new Error('Del failed'));
 
             mockOn.mockImplementation((event: string, cb: () => void) => {
-                if (event === 'connect') cb();
+                if (event === 'ready') cb();
             });
 
             await service.connect();
