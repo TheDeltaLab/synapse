@@ -68,7 +68,7 @@ RUN addgroup --system --gid 1001 nextjs && \
 
 # Copy standalone output
 COPY --from=builder --chown=nextjs:nextjs /app/apps/dashboard/.next/standalone ./
-COPY --from=builder --chown=nextjs:nextjs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
+COPY --from=builder --chown=nextjs:nextjs /app/apps/dashboard/.next/static ./.next/static
 
 USER nextjs
 
