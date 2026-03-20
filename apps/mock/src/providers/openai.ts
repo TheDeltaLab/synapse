@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { MOCK_RESPONSE_TEXT } from '../utils/constants.js';
 import { generateRandomVector, getDimension } from '../utils/vectors.js';
 
 const MOCK_MODELS = [
@@ -27,19 +28,98 @@ openaiApp.get('/v1/models', (c) => {
     return c.json({ object: 'list', data: models });
 });
 
-// Chat completions — 501 Not Implemented
-openaiApp.post('/v1/chat/completions', (c) => {
-    return c.json(
-        {
-            error: {
-                message: 'Chat completions are not implemented in the mock server.',
-                type: 'api_error',
-                param: null,
-                code: 'not_implemented',
-            },
-        },
-        501,
+// Chat completions
+openaiApp.post('/v1/chat/completions', async (c) => {
+    const body = await c.req.json();
+    const model: string = body.model ?? 'gpt-4o';
+    const stream: boolean = body.stream ?? false;
+
+    const chatId = `chatcmpl-mock-${Date.now()}`;
+    const created = Math.floor(Date.now() / 1000);
+
+    // Approximate token count (1 token ~ 4 chars)
+    const messages: Array<{ content?: string }> = body.messages ?? [];
+    const promptTokens = messages.reduce(
+        (sum: number, msg: { content?: string }) => sum + Math.ceil(String(msg.content ?? '').length / 4),
+        0,
     );
+    const completionTokens = Math.ceil(MOCK_RESPONSE_TEXT.length / 4);
+
+    if (stream) {
+        const encoder = new TextEncoder();
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+
+        (async () => {
+            try {
+                // Send role chunk
+                await writer.write(encoder.encode(`data: ${JSON.stringify({
+                    id: chatId,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
+                })}\n\n`));
+
+                // Send content chunk
+                await writer.write(encoder.encode(`data: ${JSON.stringify({
+                    id: chatId,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{ index: 0, delta: { content: MOCK_RESPONSE_TEXT }, finish_reason: null }],
+                })}\n\n`));
+
+                // Send final chunk with finish_reason
+                await writer.write(encoder.encode(`data: ${JSON.stringify({
+                    id: chatId,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                    usage: {
+                        prompt_tokens: promptTokens,
+                        completion_tokens: completionTokens,
+                        total_tokens: promptTokens + completionTokens,
+                    },
+                })}\n\n`));
+
+                await writer.write(encoder.encode('data: [DONE]\n\n'));
+            } finally {
+                await writer.close();
+            }
+        })();
+
+        return new Response(readable, {
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+        });
+    }
+
+    return c.json({
+        id: chatId,
+        object: 'chat.completion',
+        created,
+        model,
+        choices: [
+            {
+                index: 0,
+                message: {
+                    role: 'assistant',
+                    content: MOCK_RESPONSE_TEXT,
+                },
+                finish_reason: 'stop',
+            },
+        ],
+        usage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+        },
+    });
 });
 
 // Embeddings

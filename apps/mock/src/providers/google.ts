@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { MOCK_RESPONSE_TEXT } from '../utils/constants.js';
 import { generateRandomVector, getDimension } from '../utils/vectors.js';
 
 export const googleApp = new Hono();
@@ -45,16 +46,37 @@ googleApp.post('/v1beta/models/*', async (c) => {
 
     switch (action) {
         case 'generateContent': {
-            return c.json(
-                {
-                    error: {
-                        code: 501,
-                        message: 'Content generation is not implemented in the mock server.',
-                        status: 'UNIMPLEMENTED',
-                    },
-                },
-                501,
+            // Approximate token count (1 token ~ 4 chars)
+            const body = await c.req.json();
+            const contents: Array<{ parts?: Array<{ text?: string }> }> = body.contents ?? [];
+            const promptTokenCount = contents.reduce(
+                (sum: number, content: { parts?: Array<{ text?: string }> }) =>
+                    (content.parts ?? []).reduce(
+                        (s: number, part: { text?: string }) => s + Math.ceil(String(part.text ?? '').length / 4),
+                        sum,
+                    ),
+                0,
             );
+            const candidateTokenCount = Math.ceil(MOCK_RESPONSE_TEXT.length / 4);
+
+            return c.json({
+                candidates: [
+                    {
+                        content: {
+                            parts: [{ text: MOCK_RESPONSE_TEXT }],
+                            role: 'model',
+                        },
+                        finishReason: 'STOP',
+                        index: 0,
+                    },
+                ],
+                usageMetadata: {
+                    promptTokenCount,
+                    candidatesTokenCount: candidateTokenCount,
+                    totalTokenCount: promptTokenCount + candidateTokenCount,
+                },
+                modelVersion: model,
+            });
         }
 
         case 'embedContent': {
