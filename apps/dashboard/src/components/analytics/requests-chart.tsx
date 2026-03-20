@@ -39,8 +39,8 @@ export function RequestsChart({ data }: RequestsChartProps) {
                         <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} />
                         <Tooltip
-                            formatter={(value: number | undefined) => [
-                                value !== undefined ? `${value}` : '-',
+                            formatter={value => [
+                                typeof value === 'number' ? `${value}` : '-',
                                 'Requests',
                             ]}
                         />

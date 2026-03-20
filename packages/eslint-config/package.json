@@ -17,12 +17,9 @@
   "packageManager": "pnpm@10.28.1",
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.7.1",
-    "eslint": "^9.18.0",
+    "eslint": "catalog:",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-unused-imports": "^4.1.4",
     "typescript-eslint": "^8.20.0"
-  },
-  "peerDependencies": {
-    "eslint": "^9.0.0"
   }
 }
