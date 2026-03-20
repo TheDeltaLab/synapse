@@ -3,14 +3,15 @@ packages:
   - packages/*
 
 catalog:
+  eslint: ^9
   hono: ^4.12.8
   "@hono/node-server": ^1.19.10
-
-overrides:
-  hono: ^4.12.8
-  "@hono/node-server": ^1.19.10
-  flatted: ">=3.4.2"
   lodash: ">=4.17.23"
+
+# overrides:
+#   hono: ^4.12.8
+#   "@hono/node-server": ^1.19.10
+#   lodash: ">=4.17.23"
 
 ignoredBuiltDependencies:
   - bcrypt
