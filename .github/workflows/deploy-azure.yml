@@ -47,11 +47,15 @@ jobs:
       gateway_app: ${{ steps.params.outputs.gateway_app }}
       dashboard_app: ${{ steps.params.outputs.dashboard_app }}
       should_deploy: ${{ steps.params.outputs.should_deploy }}
+      deploy_gateway: ${{ steps.params.outputs.deploy_gateway }}
+      deploy_dashboard: ${{ steps.params.outputs.deploy_dashboard }}
       image_prefix: ${{ steps.params.outputs.image_prefix }}
       location: ${{ steps.params.outputs.location }}
     steps:
       - name: Determine deployment parameters
         id: params
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # GitHub repository owner may contain uppercase, but OCI requires lowercase
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
@@ -63,6 +67,9 @@ jobs:
             IMAGE_TAG="${{ inputs.image_tag }}"
             ENVIRONMENT="${{ inputs.environment }}"
             LOCATION="${{ inputs.location }}"
+            # Manual dispatch always deploys both
+            DEPLOY_GATEWAY="true"
+            DEPLOY_DASHBOARD="true"
           elif [ "${{ github.event.workflow_run.conclusion }}" == "success" ]; then
             SHOULD_DEPLOY="true"
             # Use SHA tag for auto-deploy (more reliable than nightly which may be cached)
@@ -70,11 +77,44 @@ jobs:
             IMAGE_TAG="sha-${SHORT_SHA}"
             ENVIRONMENT="test"  # Auto-deploy to test only
             LOCATION="koreacentral"  # Default location for auto-deploy
+
+            # Check which images were actually built by querying the Docker workflow jobs
+            WORKFLOW_RUN_ID="${{ github.event.workflow_run.id }}"
+            echo "Checking Docker workflow run ${WORKFLOW_RUN_ID} for built images..."
+
+            JOBS_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs" --jq '.jobs[] | {name: .name, conclusion: .conclusion}')
+            echo "Docker workflow jobs:"
+            echo "$JOBS_JSON"
+
+            DEPLOY_GATEWAY="false"
+            DEPLOY_DASHBOARD="false"
+
+            if echo "$JOBS_JSON" | grep -q '"name":"Build Gateway".*"conclusion":"success"'; then
+              DEPLOY_GATEWAY="true"
+              echo "✅ Gateway image was built, will deploy"
+            else
+              echo "⏭️ Gateway image was not built (skipped or failed), skipping deploy"
+            fi
+
+            if echo "$JOBS_JSON" | grep -q '"name":"Build Dashboard".*"conclusion":"success"'; then
+              DEPLOY_DASHBOARD="true"
+              echo "✅ Dashboard image was built, will deploy"
+            else
+              echo "⏭️ Dashboard image was not built (skipped or failed), skipping deploy"
+            fi
+
+            # If neither image was built, skip deployment entirely
+            if [ "$DEPLOY_GATEWAY" == "false" ] && [ "$DEPLOY_DASHBOARD" == "false" ]; then
+              echo "⚠️ No images were built, skipping deployment"
+              SHOULD_DEPLOY="false"
+            fi
           else
             SHOULD_DEPLOY="false"
             IMAGE_TAG=""
             ENVIRONMENT=""
             LOCATION=""
+            DEPLOY_GATEWAY="false"
+            DEPLOY_DASHBOARD="false"
           fi
 
           # Set environment-specific resource names
@@ -103,6 +143,8 @@ jobs:
 
           # Output all parameters
           echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+          echo "deploy_gateway=$DEPLOY_GATEWAY" >> $GITHUB_OUTPUT
+          echo "deploy_dashboard=$DEPLOY_DASHBOARD" >> $GITHUB_OUTPUT
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "resource_group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
@@ -122,12 +164,16 @@ jobs:
           echo "| Resource Group | $RESOURCE_GROUP |" >> $GITHUB_STEP_SUMMARY
           echo "| Gateway App | $GATEWAY_APP |" >> $GITHUB_STEP_SUMMARY
           echo "| Dashboard App | $DASHBOARD_APP |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Gateway | $DEPLOY_GATEWAY |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Dashboard | $DEPLOY_DASHBOARD |" >> $GITHUB_STEP_SUMMARY
 
   deploy-gateway:
     name: Deploy Gateway (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
     needs: prepare
-    if: needs.prepare.outputs.should_deploy == 'true'
+    if: |
+      needs.prepare.outputs.should_deploy == 'true' &&
+      needs.prepare.outputs.deploy_gateway == 'true'
     environment: ${{ needs.prepare.outputs.environment }}
     permissions:
       id-token: write  # Required for OIDC authentication
@@ -164,7 +210,11 @@ jobs:
     name: Deploy Dashboard (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
     needs: [prepare, deploy-gateway]
-    if: needs.prepare.outputs.should_deploy == 'true'
+    if: |
+      always() &&
+      needs.prepare.outputs.should_deploy == 'true' &&
+      needs.prepare.outputs.deploy_dashboard == 'true' &&
+      (needs.deploy-gateway.result == 'success' || needs.deploy-gateway.result == 'skipped')
     environment: ${{ needs.prepare.outputs.environment }}
     permissions:
       id-token: write  # Required for OIDC authentication
@@ -204,8 +254,10 @@ jobs:
     needs: [prepare, deploy-gateway, deploy-dashboard]
     if: |
       always() &&
-      needs.deploy-gateway.result == 'success' &&
-      needs.deploy-dashboard.result == 'success'
+      needs.prepare.outputs.should_deploy == 'true' &&
+      (needs.deploy-gateway.result == 'success' || needs.deploy-gateway.result == 'skipped') &&
+      (needs.deploy-dashboard.result == 'success' || needs.deploy-dashboard.result == 'skipped') &&
+      (needs.deploy-gateway.result == 'success' || needs.deploy-dashboard.result == 'success')
     env:
       # Environment-specific URLs (set via GitHub Environment variables)
       GATEWAY_URL: ${{ vars.GATEWAY_URL }}
@@ -215,6 +267,7 @@ jobs:
         run: sleep 15
 
       - name: Check Gateway Health
+        if: needs.deploy-gateway.result == 'success'
         uses: nick-fields/retry@v3
         with:
           timeout_seconds: 10
@@ -234,6 +287,7 @@ jobs:
             echo "✅ Gateway health check passed"
 
       - name: Check Dashboard Health
+        if: needs.deploy-dashboard.result == 'success'
         uses: nick-fields/retry@v3
         with:
           timeout_seconds: 10
@@ -260,8 +314,19 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Image | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Gateway | \`${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dashboard | \`${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}\` | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.deploy-gateway.result }}" == "success" ]; then
+            echo "| Gateway | \`${{ needs.prepare.outputs.image_prefix }}/gateway:${{ needs.prepare.outputs.image_tag }}\` | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Gateway | — | ⏭️ Skipped (no new image) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.deploy-dashboard.result }}" == "success" ]; then
+            echo "| Dashboard | \`${{ needs.prepare.outputs.image_prefix }}/dashboard:${{ needs.prepare.outputs.image_tag }}\` | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Dashboard | — | ⏭️ Skipped (no new image) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Resources" >> $GITHUB_STEP_SUMMARY
           echo "- **Resource Group:** \`${{ needs.prepare.outputs.resource_group }}\`" >> $GITHUB_STEP_SUMMARY
