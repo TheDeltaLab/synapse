@@ -14,20 +14,20 @@ serve({ fetch: openaiApp.fetch, port: OPENAI_PORT }, () => {
     console.log(`Mock OpenAI     running on http://localhost:${OPENAI_PORT}`);
     console.log(`  GET  /health`);
     console.log(`  GET  /v1/models`);
-    console.log(`  POST /v1/chat/completions  (501)`);
+    console.log(`  POST /v1/chat/completions`);
     console.log(`  POST /v1/embeddings`);
 });
 
 serve({ fetch: anthropicApp.fetch, port: ANTHROPIC_PORT }, () => {
     console.log(`Mock Anthropic  running on http://localhost:${ANTHROPIC_PORT}`);
     console.log(`  GET  /health`);
-    console.log(`  POST /v1/messages          (501)`);
+    console.log(`  POST /v1/messages`);
 });
 
 serve({ fetch: googleApp.fetch, port: GOOGLE_PORT }, () => {
     console.log(`Mock Google     running on http://localhost:${GOOGLE_PORT}`);
     console.log(`  GET  /health`);
-    console.log(`  POST /v1beta/models/{model}:generateContent   (501)`);
+    console.log(`  POST /v1beta/models/{model}:generateContent`);
     console.log(`  POST /v1beta/models/{model}:embedContent`);
     console.log(`  POST /v1beta/models/{model}:batchEmbedContents`);
 });
@@ -36,6 +36,6 @@ serve({ fetch: openrouterApp.fetch, port: OPENROUTER_PORT }, () => {
     console.log(`Mock OpenRouter running on http://localhost:${OPENROUTER_PORT}`);
     console.log(`  GET  /health`);
     console.log(`  GET  /v1/models`);
-    console.log(`  POST /v1/chat/completions  (501)`);
+    console.log(`  POST /v1/chat/completions`);
     console.log(`  POST /v1/embeddings`);
 });

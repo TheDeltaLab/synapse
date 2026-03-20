@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { googleApp } from '../providers/google.js';
+import { MOCK_RESPONSE_TEXT } from '../utils/constants.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = Record<string, any>;
@@ -15,7 +16,7 @@ describe('Google Mock Provider', () => {
     });
 
     describe('POST /v1beta/models/{model}:generateContent', () => {
-        it('should return 501 with Google error format', async () => {
+        it('should return mock response in Google format', async () => {
             const res = await googleApp.request('/v1beta/models/gemini-pro:generateContent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -23,12 +24,20 @@ describe('Google Mock Provider', () => {
                     contents: [{ parts: [{ text: 'hello' }] }],
                 }),
             });
-            expect(res.status).toBe(501);
+            expect(res.status).toBe(200);
             const body = (await res.json()) as Json;
-            expect(body.error).toBeDefined();
-            expect(body.error.code).toBe(501);
-            expect(body.error.status).toBe('UNIMPLEMENTED');
-            expect(body.error.message).toBeTruthy();
+            expect(body.candidates).toHaveLength(1);
+            expect(body.candidates[0].content.parts[0].text).toBe(MOCK_RESPONSE_TEXT);
+            expect(body.candidates[0].content.role).toBe('model');
+            expect(body.candidates[0].finishReason).toBe('STOP');
+            expect(body.candidates[0].index).toBe(0);
+            expect(body.modelVersion).toBe('gemini-pro');
+            expect(body.usageMetadata).toBeDefined();
+            expect(body.usageMetadata.promptTokenCount).toBeGreaterThan(0);
+            expect(body.usageMetadata.candidatesTokenCount).toBeGreaterThan(0);
+            expect(body.usageMetadata.totalTokenCount).toBe(
+                body.usageMetadata.promptTokenCount + body.usageMetadata.candidatesTokenCount,
+            );
         });
     });
 
