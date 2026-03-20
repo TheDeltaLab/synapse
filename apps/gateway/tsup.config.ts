@@ -14,7 +14,7 @@ export default defineConfig({
     // Keep packages with native bindings or CommonJS dynamic requires external
     external: [
         'bcrypt',
-        'ioredis',
+        'redis',
         '@prisma/client',
         'pg',
         'pg-native',

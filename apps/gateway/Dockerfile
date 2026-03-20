@@ -85,7 +85,7 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 synapse && \
     adduser --system --uid 1001 --ingroup synapse synapse
 
-# Copy production node_modules (external packages like bcrypt, ioredis, pg need to be available)
+# Copy production node_modules (external packages like bcrypt, redis, pg need to be available)
 COPY --from=prod-deps --chown=synapse:synapse /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/apps/gateway/node_modules ./apps/gateway/node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/packages/dal/node_modules ./packages/dal/node_modules
