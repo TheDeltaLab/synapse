@@ -155,6 +155,90 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+  build-mock:
+    name: Build Gateway Mock
+    runs-on: ubuntu-latest
+    needs: changes
+    # Build if: release, manual trigger, or mock files changed
+    if: |
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.mock == 'true'
+    permissions:
+      contents: read
+      packages: write
+      # Required for attestations
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.changes.outputs.image_prefix }}/mock
+          tags: |
+            # nightly tag for main branch pushes
+            type=raw,value=nightly,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            # latest tag for releases
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            # semver tags for releases (v1.2.3, v1.2, v1)
+            type=semver,pattern=v{{version}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern=v{{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern=v{{major}},enable=${{ github.event_name == 'release' && !startsWith(github.ref, 'refs/tags/v0.') }}
+            # sha tag for traceability
+            type=sha,prefix=sha-,format=short
+            # branch name for feature branches
+            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=Synapse Mock
+            org.opencontainers.image.description=AI Gateway Mock - OpenAI-compatible LLM routing with fallback strategies
+            org.opencontainers.image.vendor=Synapse
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mock/Dockerfile
+          platforms: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Provenance for supply chain security
+          provenance: true
+          sbom: true
+
+      - name: Generate artifact attestation
+        if: github.event_name != 'workflow_dispatch' || inputs.push
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ needs.changes.outputs.image_prefix }}/mock
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
   build-dashboard:
     name: Build Dashboard
     runs-on: ubuntu-latest
