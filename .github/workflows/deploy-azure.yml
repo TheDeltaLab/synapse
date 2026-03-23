@@ -118,21 +118,25 @@ jobs:
           fi
 
           # Set environment-specific resource names
+          # Follows merlin naming convention:
+          #   project=merlin, name=synapse-{gateway|dashboard}, ring={tst|stg|prd}, region=krc
+          #   → merlin-synapse-{gateway|dashboard}-{tst|stg|prd}-krc
+          #   Resource Group: merlin-rg-{tst|stg|prd}-krc
           case "$ENVIRONMENT" in
             test)
-              RESOURCE_GROUP="synapse-test-rg"
-              GATEWAY_APP="synapse-gateway-test"
-              DASHBOARD_APP="synapse-dashboard-test"
+              RESOURCE_GROUP="merlin-rg-tst-krc"
+              GATEWAY_APP="merlin-synapse-gateway-tst-krc"
+              DASHBOARD_APP="merlin-synapse-dashboard-tst-krc"
               ;;
             staging)
-              RESOURCE_GROUP="synapse-staging-rg"
-              GATEWAY_APP="synapse-gateway-staging"
-              DASHBOARD_APP="synapse-dashboard-staging"
+              RESOURCE_GROUP="merlin-rg-stg-krc"
+              GATEWAY_APP="merlin-synapse-gateway-stg-krc"
+              DASHBOARD_APP="merlin-synapse-dashboard-stg-krc"
               ;;
             production)
-              RESOURCE_GROUP="synapse-rg"
-              GATEWAY_APP="synapse-gateway"
-              DASHBOARD_APP="synapse-dashboard"
+              RESOURCE_GROUP="merlin-rg-prd-krc"
+              GATEWAY_APP="merlin-synapse-gateway-prd-krc"
+              DASHBOARD_APP="merlin-synapse-dashboard-prd-krc"
               ;;
             *)
               RESOURCE_GROUP=""
