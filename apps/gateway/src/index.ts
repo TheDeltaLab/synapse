@@ -8,7 +8,7 @@ const port = parseInt(process.env.PORT || '3000', 10);
 
 console.log(`🚀 Gateway server starting on port ${port}...`);
 
-serve({
+const server = serve({
     fetch: app.fetch,
     port,
 });
@@ -50,3 +50,18 @@ if (embeddingProviders.length > 0) {
 } else {
     console.log('\n⚠️  No embedding providers configured.');
 }
+
+// Graceful shutdown
+function shutdown() {
+    console.log('\nShutting down gateway server...');
+    server.close(async () => {
+        await redisService.disconnect();
+        console.log('Gateway server stopped.');
+        process.exit(0);
+    });
+    // Force exit after 5 seconds if server hasn't closed
+    setTimeout(() => process.exit(1), 5000).unref();
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
