@@ -15,6 +15,9 @@ services:
       - ./packages/dal/src:/app/packages/dal/src:ro
     command: ["pnpm", "--filter", "gateway", "dev"]
     environment:
+      OPENAI_API_KEY: sk-...
+      ANTHROPIC_API_KEY: sk-ant-...
+      GOOGLE_API_KEY: sk-goo-...
       NODE_ENV: development
 
   dashboard:
@@ -27,4 +30,27 @@ services:
     command: ["pnpm", "--filter", "@synapse/dashboard", "dev"]
     environment:
       NODE_ENV: development
-      NEXT_PUBLIC_GATEWAY_URL: http://localhost:3000
+      GATEWAY_URL: http://gateway:3000
+
+  mock:
+    build:
+      context: .
+      dockerfile: apps/mock/Dockerfile
+    env_file: .env
+    ports:
+      - "9001:9001"
+      - "9002:9002"
+      - "9003:9003"
+      - "9004:9004"
+    environment:
+      NODE_ENV: development
+      MOCK_OPENAI_PORT: 9001
+      MOCK_ANTHROPIC_PORT: 9002
+      MOCK_GOOGLE_PORT: 9003
+      MOCK_OPENROUTER_PORT: 9004
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9001/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
