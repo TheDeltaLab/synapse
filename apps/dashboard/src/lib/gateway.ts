@@ -228,10 +228,13 @@ class GatewayClient {
     // Embedding Providers
     async getEmbeddingProviders(): Promise<{
         providers: Array<{
+            id: string;
             name: string;
-            models: string[];
-            defaultModel: string | null;
             available: boolean;
+            chatModels: string[];
+            defaultChatModel?: string;
+            embeddingModels: string[];
+            defaultEmbeddingModel: string | null;
         }>;
     }> {
         const response = await fetch(`${this.baseUrl}/admin/providers/embedding`);

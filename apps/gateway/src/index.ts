@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import app from './app.js';
-import { providerConfig, type ProviderName } from './config/providers.js';
+import { providers, getChatDeployments, getEmbeddingDeployments } from './config/providers.js';
 import { redisService } from './services/redis-service.js';
 
 const port = parseInt(process.env.PORT || '3000', 10);
@@ -27,15 +27,15 @@ redisService.connect().then(() => {
 });
 
 // Log configured providers
-const allProviders = Object.keys(providerConfig) as ProviderName[];
-const chatProviders = allProviders.filter(name => providerConfig[name].apiKey);
-const embeddingProviders = chatProviders.filter(name => providerConfig[name].embeddingModels.length > 0);
+const configuredProviders = providers.filter(provider => provider.apiKey);
+const chatProviders = configuredProviders.filter(provider => getChatDeployments(provider.id).length > 0);
+const embeddingProviders = configuredProviders.filter(provider => getEmbeddingDeployments(provider.id).length > 0);
 
 if (chatProviders.length > 0) {
     console.log(`\n📦 Chat providers (${chatProviders.length}):`);
-    for (const name of chatProviders) {
-        const config = providerConfig[name];
-        console.log(`   ✔ ${name}  models: ${config.models.join(', ')}`);
+    for (const provider of chatProviders) {
+        const modelIds = getChatDeployments(provider.id).map(deployment => deployment.modelId);
+        console.log(`   ✔ ${provider.id}  models: ${modelIds.join(', ')}`);
     }
 } else {
     console.log('\n⚠️  No chat providers configured. Set provider API keys in .env');
@@ -43,9 +43,9 @@ if (chatProviders.length > 0) {
 
 if (embeddingProviders.length > 0) {
     console.log(`\n🔢 Embedding providers (${embeddingProviders.length}):`);
-    for (const name of embeddingProviders) {
-        const config = providerConfig[name];
-        console.log(`   ✔ ${name}  models: ${config.embeddingModels.join(', ')}`);
+    for (const provider of embeddingProviders) {
+        const modelIds = getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId);
+        console.log(`   ✔ ${provider.id}  models: ${modelIds.join(', ')}`);
     }
 } else {
     console.log('\n⚠️  No embedding providers configured.');

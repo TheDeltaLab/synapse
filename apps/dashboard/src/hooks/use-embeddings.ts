@@ -25,8 +25,8 @@ export interface EmbeddingSettings {
 }
 
 // Default embedding model and provider
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
-const DEFAULT_EMBEDDING_PROVIDER = 'openai';
+const DEFAULT_EMBEDDING_MODEL = 'qwen/qwen3-embedding-8b';
+const DEFAULT_EMBEDDING_PROVIDER = 'openrouter';
 
 export function useEmbeddings() {
     const [result, setResult] = useState<EmbeddingResult | null>(null);

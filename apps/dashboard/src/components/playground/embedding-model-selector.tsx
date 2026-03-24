@@ -14,10 +14,13 @@ import {
 import { gateway } from '@/lib/gateway';
 
 interface EmbeddingProviderInfo {
+    id: string;
     name: string;
-    models: string[];
-    defaultModel: string | null;
     available: boolean;
+    chatModels: string[];
+    defaultChatModel?: string;
+    embeddingModels: string[];
+    defaultEmbeddingModel: string | null;
 }
 
 interface EmbeddingModelSelectorProps {
@@ -108,10 +111,10 @@ export function EmbeddingModelSelector({ value, onChange }: EmbeddingModelSelect
             </SelectTrigger>
             <SelectContent>
                 {providers.map(provider => (
-                    <SelectGroup key={provider.name}>
-                        <SelectLabel className="capitalize">{provider.name}</SelectLabel>
-                        {provider.models.map(model => (
-                            <SelectItem key={`${provider.name}:${model}`} value={`${provider.name}:${model}`}>
+                    <SelectGroup key={provider.id}>
+                        <SelectLabel>{provider.name}</SelectLabel>
+                        {provider.embeddingModels.map(model => (
+                            <SelectItem key={`${provider.id}:${model}`} value={`${provider.id}:${model}`}>
                                 {model}
                             </SelectItem>
                         ))}

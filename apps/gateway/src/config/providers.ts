@@ -1,66 +1,211 @@
-// Provider configuration type definition
-export interface ProviderConfig {
-    /** API key for authenticating with the provider */
-    apiKey: string;
-    /** Default chat/completion model */
-    defaultModel: string;
-    /** List of supported chat models */
-    models: readonly string[];
-    /** List of supported embedding models (empty if provider doesn't support embeddings) */
-    embeddingModels: readonly string[];
-    /** Default embedding model, or null if embeddings are not supported */
-    defaultEmbeddingModel: string | null;
-    /** Optional base URL override for the provider API (useful for proxies or mock servers) */
-    baseURL?: string;
+export type ModelTask = 'chat' | 'embedding';
+export type ModelIOType = 'text' | 'image' | 'audio' | 'video' | 'embedding';
+export type ModelCapability = 'streaming' | 'tool-calling' | 'json-mode' | 'vision' | 'embedding-dimensions';
+export type ProtocolFamily = 'openai' | 'anthropic' | 'google';
+export type SdkAdapter = 'openai' | 'anthropic' | 'google' | 'openrouter-sdk';
+
+export interface Provider {
+    readonly id: string;
+    readonly name: string;
+    readonly baseUrl?: string;
+    readonly enabled: boolean;
+    readonly apiKey: string;
 }
 
-/**
- * Resolve an env var to a trimmed string or undefined.
- * Treats empty / whitespace-only values as unset.
- */
+export interface Model {
+    readonly id: string;
+    readonly name: string;
+    readonly task: ModelTask;
+    readonly inputTypes: readonly ModelIOType[];
+    readonly outputTypes: readonly ModelIOType[];
+    readonly capabilities: readonly ModelCapability[];
+}
+
+export interface Deployment {
+    readonly id: string;
+    readonly providerId: string;
+    readonly modelId: string;
+    readonly task: ModelTask;
+    readonly protocolFamily: ProtocolFamily;
+    readonly sdkAdapter: SdkAdapter;
+    readonly upstreamModel: string;
+    readonly isDefault?: boolean;
+    readonly enabled?: boolean;
+    readonly capabilityOverrides?: Partial<Record<ModelCapability, boolean>>;
+}
+
 function envOrUndefined(key: string): string | undefined {
     const value = process.env[key]?.trim();
     return value || undefined;
 }
 
-// Provider configuration for LLM services
-export const providerConfig = {
-    openai: {
-        apiKey: process.env.OPENAI_API_KEY || '',
-        baseURL: envOrUndefined('OPENAI_BASE_URL'),
-        defaultModel: 'gpt-4o',
-        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-        // Embedding models configuration
-        embeddingModels: ['text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002'],
-        defaultEmbeddingModel: 'text-embedding-3-small',
-    },
-    anthropic: {
-        apiKey: process.env.ANTHROPIC_API_KEY || '',
-        baseURL: envOrUndefined('ANTHROPIC_BASE_URL'),
-        defaultModel: 'claude-3-5-sonnet-20241022',
-        models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
-        // Anthropic does not support embeddings
-        embeddingModels: [],
-        defaultEmbeddingModel: null,
-    },
-    google: {
-        apiKey: process.env.GOOGLE_API_KEY || '',
-        baseURL: envOrUndefined('GOOGLE_BASE_URL'),
-        defaultModel: 'gemini-2.0-flash-exp',
-        models: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'],
-        // Embedding models configuration
-        embeddingModels: ['text-embedding-004'],
-        defaultEmbeddingModel: 'text-embedding-004',
-    },
-    openrouter: {
-        apiKey: process.env.OPENROUTER_API_KEY || '',
-        baseURL: envOrUndefined('OPENROUTER_BASE_URL') ?? 'https://openrouter.ai/api/v1',
-        defaultModel: 'gpt-5-mini',
-        models: ['gpt-5-mini', 'gpt-5', 'claude-3-5-sonnet', 'gemini-2.0-flash'],
-        // OpenRouter supports embeddings via OpenAI-compatible interface
-        embeddingModels: ['text-embedding-3-small', 'text-embedding-3-large', 'qwen/qwen3-embedding-8b'],
-        defaultEmbeddingModel: 'qwen/qwen3-embedding-8b',
-    },
-} satisfies Record<string, ProviderConfig>;
+class EnvProvider<Id extends string> implements Provider {
+    readonly id: Id;
+    readonly name: string;
+    readonly baseUrl?: string;
+    readonly enabled: boolean;
+    private readonly _envKey: string;
 
-export type ProviderName = keyof typeof providerConfig;
+    constructor(p: { id: Id; name: string; envKey: string; baseUrl?: string; enabled?: boolean }) {
+        this.id = p.id;
+        this.name = p.name;
+        this.baseUrl = p.baseUrl;
+        this.enabled = p.enabled ?? true;
+        this._envKey = p.envKey;
+    }
+
+    get apiKey(): string {
+        return process.env[this._envKey]?.trim() ?? '';
+    }
+}
+
+export const providers = [
+    new EnvProvider({
+        id: 'openai',
+        name: 'OpenAI',
+        envKey: 'OPENAI_API_KEY',
+        baseUrl: envOrUndefined('OPENAI_BASE_URL'),
+    }),
+    new EnvProvider({
+        id: 'anthropic',
+        name: 'Anthropic',
+        envKey: 'ANTHROPIC_API_KEY',
+        baseUrl: envOrUndefined('ANTHROPIC_BASE_URL'),
+    }),
+    new EnvProvider({
+        id: 'google',
+        name: 'Google',
+        envKey: 'GOOGLE_API_KEY',
+        baseUrl: envOrUndefined('GOOGLE_BASE_URL'),
+    }),
+    new EnvProvider({
+        id: 'openrouter',
+        name: 'OpenRouter',
+        envKey: 'OPENROUTER_API_KEY',
+        baseUrl: envOrUndefined('OPENROUTER_BASE_URL') ?? 'https://openrouter.ai/api/v1',
+    }),
+] as const satisfies readonly Provider[];
+
+export type ProviderName = (typeof providers)[number]['id'];
+
+export const models = [
+    {
+        id: 'gemini-2.0-flash-exp',
+        name: 'Gemini 2.0 Flash Exp',
+        task: 'chat',
+        inputTypes: ['text', 'image', 'audio', 'video'],
+        outputTypes: ['text'],
+        capabilities: ['streaming', 'tool-calling', 'json-mode', 'vision'],
+    },
+    {
+        id: 'gpt-5-mini',
+        name: 'GPT-5 Mini',
+        task: 'chat',
+        inputTypes: ['text', 'image'],
+        outputTypes: ['text'],
+        capabilities: ['streaming', 'tool-calling', 'json-mode', 'vision'],
+    },
+    {
+        id: 'qwen/qwen3-embedding-8b',
+        name: 'Qwen3 Embedding 8B',
+        task: 'embedding',
+        inputTypes: ['text'],
+        outputTypes: ['embedding'],
+        capabilities: ['embedding-dimensions'],
+    },
+] as const satisfies readonly Model[];
+
+export const deployments = [
+    {
+        id: 'google:gemini-2.0-flash-exp:chat',
+        providerId: 'google',
+        modelId: 'gemini-2.0-flash-exp',
+        task: 'chat',
+        protocolFamily: 'google',
+        sdkAdapter: 'google',
+        upstreamModel: 'gemini-2.0-flash-exp',
+        isDefault: true,
+    },
+    {
+        id: 'openrouter:gpt-5-mini:chat',
+        providerId: 'openrouter',
+        modelId: 'gpt-5-mini',
+        task: 'chat',
+        protocolFamily: 'openai',
+        sdkAdapter: 'openrouter-sdk',
+        upstreamModel: 'gpt-5-mini',
+        isDefault: true,
+    },
+    {
+        id: 'openrouter:qwen/qwen3-embedding-8b:embedding',
+        providerId: 'openrouter',
+        modelId: 'qwen/qwen3-embedding-8b',
+        task: 'embedding',
+        protocolFamily: 'openai',
+        sdkAdapter: 'openai',
+        upstreamModel: 'qwen/qwen3-embedding-8b',
+        isDefault: true,
+    },
+] as const satisfies readonly Deployment[];
+
+const providerList: readonly Provider[] = providers;
+const deploymentList: readonly Deployment[] = deployments;
+
+const providerMap = new Map<string, Provider>(providerList.map(provider => [provider.id, provider]));
+const deploymentMap = new Map<string, Deployment>(deploymentList.map(deployment => [
+    `${deployment.providerId}:${deployment.modelId}:${deployment.task}`,
+    deployment,
+]));
+
+function isProviderEnabled(providerId: string): boolean {
+    return providerMap.get(providerId)?.enabled ?? false;
+}
+
+export function getProvider(id: string): Provider | undefined {
+    return providerMap.get(id);
+}
+
+export function getDeployment(providerId: string, modelId: string, task: ModelTask): Deployment | undefined {
+    if (!isProviderEnabled(providerId)) {
+        return undefined;
+    }
+
+    const deployment = deploymentMap.get(`${providerId}:${modelId}:${task}`);
+    if (!deployment || deployment.enabled === false) {
+        return undefined;
+    }
+
+    return deployment;
+}
+
+export function getChatDeployments(providerId: string): Deployment[] {
+    if (!isProviderEnabled(providerId)) {
+        return [];
+    }
+
+    return deploymentList.filter(deployment => (
+        deployment.providerId === providerId
+        && deployment.task === 'chat'
+        && deployment.enabled !== false
+    ));
+}
+
+export function getEmbeddingDeployments(providerId: string): Deployment[] {
+    if (!isProviderEnabled(providerId)) {
+        return [];
+    }
+
+    return deploymentList.filter(deployment => (
+        deployment.providerId === providerId
+        && deployment.task === 'embedding'
+        && deployment.enabled !== false
+    ));
+}
+
+export function getDefaultChatModel(providerId: string): string | undefined {
+    return getChatDeployments(providerId).find(deployment => deployment.isDefault)?.modelId;
+}
+
+export function getDefaultEmbeddingModel(providerId: string): string | null {
+    return getEmbeddingDeployments(providerId).find(deployment => deployment.isDefault)?.modelId ?? null;
+}

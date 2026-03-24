@@ -1,85 +1,101 @@
-import { describe, it, expect } from 'vitest';
-import { providerConfig } from '../providers.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+    providers,
+    models,
+    deployments,
+    getProvider,
+    getDeployment,
+    getChatDeployments,
+    getEmbeddingDeployments,
+    getDefaultChatModel,
+    getDefaultEmbeddingModel,
+} from '../providers.js';
 
-describe('providerConfig', () => {
-    describe('structure', () => {
-        it('should have all required providers', () => {
-            expect(providerConfig).toHaveProperty('openai');
-            expect(providerConfig).toHaveProperty('anthropic');
-            expect(providerConfig).toHaveProperty('google');
-            expect(providerConfig).toHaveProperty('openrouter');
-        });
+const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 
-        it('should have required fields for each provider', () => {
-            const providers = ['openai', 'anthropic', 'google', 'openrouter'] as const;
+afterEach(() => {
+    if (originalOpenRouterApiKey === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+        return;
+    }
 
-            for (const provider of providers) {
-                const config = providerConfig[provider];
-                expect(config).toHaveProperty('apiKey');
-                expect(config).toHaveProperty('defaultModel');
-                expect(config).toHaveProperty('models');
-                expect(config).toHaveProperty('embeddingModels');
-                expect(config).toHaveProperty('defaultEmbeddingModel');
-                expect(Array.isArray(config.models)).toBe(true);
-                expect(Array.isArray(config.embeddingModels)).toBe(true);
-            }
-        });
+    process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
+});
 
-        it('should have optional baseURL field for each provider', () => {
-            const providers = ['openai', 'anthropic', 'google', 'openrouter'] as const;
-
-            for (const provider of providers) {
-                const config = providerConfig[provider];
-                expect(config).toHaveProperty('baseURL');
-            }
-        });
+describe('providers config', () => {
+    it('defines all supported providers', () => {
+        expect(providers.map(provider => provider.id)).toEqual([
+            'openai',
+            'anthropic',
+            'google',
+            'openrouter',
+        ]);
     });
 
-    describe('openai config', () => {
-        it('should have correct embedding models', () => {
-            expect(providerConfig.openai.embeddingModels).toContain('text-embedding-3-small');
-            expect(providerConfig.openai.embeddingModels).toContain('text-embedding-3-large');
-            expect(providerConfig.openai.embeddingModels).toContain('text-embedding-ada-002');
-        });
+    it('reads provider API keys through env-backed getters', () => {
+        process.env.OPENROUTER_API_KEY = '  test-openrouter-key  ';
 
-        it('should have default embedding model', () => {
-            expect(providerConfig.openai.defaultEmbeddingModel).toBe('text-embedding-3-small');
-        });
-
-        it('should have chat models', () => {
-            expect(providerConfig.openai.models.length).toBeGreaterThan(0);
-            expect(providerConfig.openai.defaultModel).toBe('gpt-4o');
-        });
+        expect(getProvider('openrouter')?.apiKey).toBe('test-openrouter-key');
     });
 
-    describe('anthropic config', () => {
-        it('should not have embedding models (unsupported)', () => {
-            expect(providerConfig.anthropic.embeddingModels).toEqual([]);
-            expect(providerConfig.anthropic.defaultEmbeddingModel).toBeNull();
-        });
-
-        it('should have chat models', () => {
-            expect(providerConfig.anthropic.models.length).toBeGreaterThan(0);
-        });
+    it('defines the reduced chat and embedding model catalogs', () => {
+        expect(models.map(model => model.id)).toEqual([
+            'gemini-2.0-flash-exp',
+            'gpt-5-mini',
+            'qwen/qwen3-embedding-8b',
+        ]);
+        expect(models.map(model => model.task)).toEqual([
+            'chat',
+            'chat',
+            'embedding',
+        ]);
     });
 
-    describe('google config', () => {
-        it('should have correct embedding models', () => {
-            expect(providerConfig.google.embeddingModels).toContain('text-embedding-004');
-        });
-
-        it('should have default embedding model', () => {
-            expect(providerConfig.google.defaultEmbeddingModel).toBe('text-embedding-004');
-        });
+    it('maps every deployment to an existing provider and model', () => {
+        for (const deployment of deployments) {
+            expect(getProvider(deployment.providerId)).toBeDefined();
+            expect(models.find(model => (
+                model.id === deployment.modelId
+                && model.task === deployment.task
+            ))).toBeDefined();
+        }
     });
 
-    describe('openrouter config', () => {
-        it('should have embedding models', () => {
-            expect(providerConfig.openrouter.embeddingModels.length).toBeGreaterThan(0);
-        });
+    it('declares OpenRouter embedding deployments with the OpenAI adapter', () => {
+        const deployment = getDeployment('openrouter', 'qwen/qwen3-embedding-8b', 'embedding');
 
-        it('should have default embedding model', () => {
-            expect(providerConfig.openrouter.defaultEmbeddingModel).not.toBeNull();
-        });
+        expect(deployment).toBeDefined();
+        expect(deployment?.sdkAdapter).toBe('openai');
+        expect(deployment?.upstreamModel).toBe('qwen/qwen3-embedding-8b');
+    });
+
+    it('declares OpenRouter chat deployments with the native OpenRouter adapter', () => {
+        const deployment = getDeployment('openrouter', 'gpt-5-mini', 'chat');
+
+        expect(deployment).toBeDefined();
+        expect(deployment?.sdkAdapter).toBe('openrouter-sdk');
+        expect(deployment?.upstreamModel).toBe('gpt-5-mini');
+    });
+
+    it('returns chat and embedding deployments by provider', () => {
+        expect(getChatDeployments('openai')).toEqual([]);
+        expect(getChatDeployments('google').map(deployment => deployment.modelId)).toEqual([
+            'gemini-2.0-flash-exp',
+        ]);
+        expect(getChatDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
+            'gpt-5-mini',
+        ]);
+        expect(getEmbeddingDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
+            'qwen/qwen3-embedding-8b',
+        ]);
+        expect(getEmbeddingDeployments('anthropic')).toEqual([]);
+    });
+
+    it('returns default models from deployments', () => {
+        expect(getDefaultChatModel('openai')).toBeUndefined();
+        expect(getDefaultChatModel('google')).toBe('gemini-2.0-flash-exp');
+        expect(getDefaultChatModel('openrouter')).toBe('gpt-5-mini');
+        expect(getDefaultEmbeddingModel('openrouter')).toBe('qwen/qwen3-embedding-8b');
+        expect(getDefaultEmbeddingModel('anthropic')).toBeNull();
     });
 });

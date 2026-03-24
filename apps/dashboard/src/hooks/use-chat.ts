@@ -18,7 +18,7 @@ export interface ChatSettings {
 }
 
 // Default provider when none is configured
-const DEFAULT_PROVIDER = 'openai';
+const DEFAULT_PROVIDER = 'openrouter';
 
 export function useChat() {
     const [messages, setMessages] = useState<Message[]>([]);
