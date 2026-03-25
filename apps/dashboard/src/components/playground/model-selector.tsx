@@ -23,12 +23,14 @@ interface ModelSelectorProps {
     onChange: (value: ModelSelection) => void;
 }
 
-// Create a combined value for the select (provider:model)
-function toSelectValue(selection: ModelSelection): string {
+function toSelectValue(selection: ModelSelection): string | undefined {
+    if (!selection.provider || !selection.model) {
+        return undefined;
+    }
+
     return `${selection.provider}:${selection.model}`;
 }
 
-// Parse the combined value back to provider and model
 function fromSelectValue(value: string): ModelSelection {
     const [provider = '', ...modelParts] = value.split(':');
     return { provider, model: modelParts.join(':') };
@@ -44,8 +46,9 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
             try {
                 setLoading(true);
                 const response = await gateway.getProviders();
-                // Only show available providers
-                setProviders(response.providers.filter(p => p.available));
+                setProviders(response.providers.filter(provider => (
+                    provider.available && provider.chatModels.length > 0
+                )));
                 setError(null);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to fetch providers');
@@ -93,7 +96,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                     </SelectTrigger>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                    No providers configured. Add API keys in the gateway .env file.
+                    No chat providers configured. Add API keys in the gateway .env file.
                 </p>
             </div>
         );

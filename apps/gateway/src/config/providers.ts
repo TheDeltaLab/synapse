@@ -4,12 +4,24 @@ export type ModelCapability = 'streaming' | 'tool-calling' | 'json-mode' | 'visi
 export type ProtocolFamily = 'openai' | 'anthropic' | 'google';
 export type SdkAdapter = 'openai' | 'anthropic' | 'google' | 'openrouter-sdk';
 
-export interface Provider {
-    readonly id: string;
+export abstract class Provider<Id extends string = string> {
+    readonly id: Id;
     readonly name: string;
     readonly baseUrl?: string;
     readonly enabled: boolean;
-    readonly apiKey: string;
+
+    constructor(p: { id: Id; name: string; baseUrl?: string; enabled?: boolean }) {
+        this.id = p.id;
+        this.name = p.name;
+        this.baseUrl = p.baseUrl;
+        this.enabled = p.enabled ?? true;
+    }
+
+    abstract getApiKey(): string;
+
+    isAvailable(): boolean {
+        return this.enabled && Boolean(this.getApiKey());
+    }
 }
 
 export interface Model {
@@ -39,51 +51,67 @@ function envOrUndefined(key: string): string | undefined {
     return value || undefined;
 }
 
-class EnvProvider<Id extends string> implements Provider {
-    readonly id: Id;
-    readonly name: string;
-    readonly baseUrl?: string;
-    readonly enabled: boolean;
-    private readonly _envKey: string;
-
-    constructor(p: { id: Id; name: string; envKey: string; baseUrl?: string; enabled?: boolean }) {
-        this.id = p.id;
-        this.name = p.name;
-        this.baseUrl = p.baseUrl;
-        this.enabled = p.enabled ?? true;
-        this._envKey = p.envKey;
+class OpenAIProvider extends Provider<'openai'> {
+    constructor() {
+        super({
+            id: 'openai',
+            name: 'OpenAI',
+            baseUrl: envOrUndefined('OPENAI_BASE_URL'),
+        });
     }
 
-    get apiKey(): string {
-        return process.env[this._envKey]?.trim() ?? '';
+    getApiKey(): string {
+        return process.env.OPENAI_API_KEY?.trim() ?? '';
+    }
+}
+
+class AnthropicProvider extends Provider<'anthropic'> {
+    constructor() {
+        super({
+            id: 'anthropic',
+            name: 'Anthropic',
+            baseUrl: envOrUndefined('ANTHROPIC_BASE_URL'),
+        });
+    }
+
+    getApiKey(): string {
+        return process.env.ANTHROPIC_API_KEY?.trim() ?? '';
+    }
+}
+
+class GoogleProvider extends Provider<'google'> {
+    constructor() {
+        super({
+            id: 'google',
+            name: 'Google',
+            baseUrl: envOrUndefined('GOOGLE_BASE_URL'),
+        });
+    }
+
+    getApiKey(): string {
+        return process.env.GOOGLE_API_KEY?.trim() ?? '';
+    }
+}
+
+class OpenRouterProvider extends Provider<'openrouter'> {
+    constructor() {
+        super({
+            id: 'openrouter',
+            name: 'OpenRouter',
+            baseUrl: envOrUndefined('OPENROUTER_BASE_URL') ?? 'https://openrouter.ai/api/v1',
+        });
+    }
+
+    getApiKey(): string {
+        return process.env.OPENROUTER_API_KEY?.trim() ?? '';
     }
 }
 
 export const providers = [
-    new EnvProvider({
-        id: 'openai',
-        name: 'OpenAI',
-        envKey: 'OPENAI_API_KEY',
-        baseUrl: envOrUndefined('OPENAI_BASE_URL'),
-    }),
-    new EnvProvider({
-        id: 'anthropic',
-        name: 'Anthropic',
-        envKey: 'ANTHROPIC_API_KEY',
-        baseUrl: envOrUndefined('ANTHROPIC_BASE_URL'),
-    }),
-    new EnvProvider({
-        id: 'google',
-        name: 'Google',
-        envKey: 'GOOGLE_API_KEY',
-        baseUrl: envOrUndefined('GOOGLE_BASE_URL'),
-    }),
-    new EnvProvider({
-        id: 'openrouter',
-        name: 'OpenRouter',
-        envKey: 'OPENROUTER_API_KEY',
-        baseUrl: envOrUndefined('OPENROUTER_BASE_URL') ?? 'https://openrouter.ai/api/v1',
-    }),
+    new OpenAIProvider(),
+    new AnthropicProvider(),
+    new GoogleProvider(),
+    new OpenRouterProvider(),
 ] as const satisfies readonly Provider[];
 
 export type ProviderName = (typeof providers)[number]['id'];

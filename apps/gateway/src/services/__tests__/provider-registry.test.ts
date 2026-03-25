@@ -201,6 +201,26 @@ describe('ProviderRegistry', () => {
         expect(registry.getAvailableEmbeddingProviders()).toEqual(['openrouter']);
     });
 
+    it('treats disabled providers as unavailable', async () => {
+        process.env.OPENAI_API_KEY = 'test-openai-key';
+
+        const registry = await createRegistry();
+        const { getProvider: getConfiguredProvider } = await import('../../config/providers.js');
+        const provider = getConfiguredProvider('openai');
+
+        expect(provider).toBeDefined();
+        Object.defineProperty(provider!, 'enabled', {
+            value: false,
+            configurable: true,
+        });
+
+        expect(registry.hasProvider('openai')).toBe(false);
+        expect(registry.getProvider('openai')).toBeUndefined();
+        expect(registry.getAvailableProviders()).toEqual([]);
+        expect(() => registry.getModel('openai', 'custom-model'))
+            .toThrow('Provider openai not found or not configured');
+    });
+
     it('throws when a provider does not support embeddings', async () => {
         process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
 

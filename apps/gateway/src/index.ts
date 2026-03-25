@@ -27,7 +27,7 @@ redisService.connect().then(() => {
 });
 
 // Log configured providers
-const configuredProviders = providers.filter(provider => provider.apiKey);
+const configuredProviders = providers.filter(provider => provider.getApiKey());
 const chatProviders = configuredProviders.filter(provider => getChatDeployments(provider.id).length > 0);
 const embeddingProviders = configuredProviders.filter(provider => getEmbeddingDeployments(provider.id).length > 0);
 

@@ -118,7 +118,7 @@ export class ProviderRegistry {
             return existingRuntime;
         }
 
-        if (!provider.apiKey) {
+        if (!provider.isAvailable()) {
             throw new Error(`Provider ${provider.id} not found or not configured`);
         }
 
@@ -127,25 +127,25 @@ export class ProviderRegistry {
         switch (sdkAdapter) {
             case 'openai':
                 runtime = createOpenAI({
-                    apiKey: provider.apiKey,
+                    apiKey: provider.getApiKey(),
                     baseURL: provider.baseUrl,
                 }) as RuntimeInstance;
                 break;
             case 'anthropic':
                 runtime = createAnthropic({
-                    apiKey: provider.apiKey,
+                    apiKey: provider.getApiKey(),
                     baseURL: provider.baseUrl,
                 }) as RuntimeInstance;
                 break;
             case 'google':
                 runtime = createGoogleGenerativeAI({
-                    apiKey: provider.apiKey,
+                    apiKey: provider.getApiKey(),
                     baseURL: provider.baseUrl,
                 }) as RuntimeInstance;
                 break;
             case 'openrouter-sdk':
                 runtime = createOpenRouter({
-                    apiKey: provider.apiKey,
+                    apiKey: provider.getApiKey(),
                     baseURL: provider.baseUrl,
                     fetch: createNormalizingFetch(),
                 }) as RuntimeInstance;
@@ -158,7 +158,7 @@ export class ProviderRegistry {
 
     getProvider(name: ProviderName): RuntimeInstance | undefined {
         const provider = findProvider(name);
-        if (!provider?.apiKey) {
+        if (!provider?.isAvailable()) {
             return undefined;
         }
 
@@ -177,7 +177,7 @@ export class ProviderRegistry {
         }
 
         const provider = findProvider(providerId);
-        if (!provider?.apiKey) {
+        if (!provider?.isAvailable()) {
             throw new Error(`Provider ${providerId} not found or not configured`);
         }
 
@@ -185,7 +185,7 @@ export class ProviderRegistry {
     }
 
     hasProvider(name: ProviderName): boolean {
-        return Boolean(findProvider(name)?.apiKey);
+        return Boolean(findProvider(name)?.isAvailable());
     }
 
     getAvailableProviders(): ProviderName[] {
@@ -204,7 +204,7 @@ export class ProviderRegistry {
 
     getEmbeddingModel(providerId: ProviderName, modelId: string): EmbeddingModel {
         const provider = findProvider(providerId);
-        if (!provider?.apiKey) {
+        if (!provider?.isAvailable()) {
             throw new Error(`Provider ${providerId} not found or not configured`);
         }
 

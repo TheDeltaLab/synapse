@@ -32,10 +32,19 @@ describe('providers config', () => {
         ]);
     });
 
-    it('reads provider API keys through env-backed getters', () => {
+    it('instantiates provider-specific classes', () => {
+        expect(getProvider('openai')?.constructor.name).toBe('OpenAIProvider');
+        expect(getProvider('anthropic')?.constructor.name).toBe('AnthropicProvider');
+        expect(getProvider('google')?.constructor.name).toBe('GoogleProvider');
+        expect(getProvider('openrouter')?.constructor.name).toBe('OpenRouterProvider');
+    });
+
+    it('reads provider API keys through env-backed methods', () => {
         process.env.OPENROUTER_API_KEY = '  test-openrouter-key  ';
 
-        expect(getProvider('openrouter')?.apiKey).toBe('test-openrouter-key');
+        expect(getProvider('openrouter')?.getApiKey()).toBe('test-openrouter-key');
+        expect(getProvider('openrouter')?.isAvailable()).toBe(true);
+        expect(getProvider('openai')?.isAvailable()).toBe(false);
     });
 
     it('defines the reduced chat and embedding model catalogs', () => {

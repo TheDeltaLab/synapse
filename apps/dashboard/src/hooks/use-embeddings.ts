@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import type { ProviderInfo } from '@synapse/shared';
 import type { ModelSelection } from '@/components/playground/model-selector';
 import { gateway } from '@/lib/gateway';
 
@@ -24,9 +25,29 @@ export interface EmbeddingSettings {
     encodingFormat: 'float' | 'base64';
 }
 
-// Default embedding model and provider
-const DEFAULT_EMBEDDING_MODEL = 'qwen/qwen3-embedding-8b';
-const DEFAULT_EMBEDDING_PROVIDER = 'openrouter';
+function isEmbeddingSelectionAvailable(providers: ProviderInfo[], selection: ModelSelection): boolean {
+    return providers.some(provider => (
+        provider.id === selection.provider
+        && provider.embeddingModels.includes(selection.model)
+    ));
+}
+
+function getDefaultEmbeddingSelection(providers: ProviderInfo[]): ModelSelection | null {
+    const provider = providers.find(candidate => candidate.embeddingModels.length > 0);
+    if (!provider) {
+        return null;
+    }
+
+    const model = provider.defaultEmbeddingModel ?? provider.embeddingModels[0];
+    if (!model) {
+        return null;
+    }
+
+    return {
+        provider: provider.id,
+        model,
+    };
+}
 
 export function useEmbeddings() {
     const [result, setResult] = useState<EmbeddingResult | null>(null);
@@ -34,13 +55,59 @@ export function useEmbeddings() {
     const [error, setError] = useState<string | null>(null);
     const [latency, setLatency] = useState<number | null>(null);
     const [settings, setSettings] = useState<EmbeddingSettings>({
-        modelSelection: { provider: DEFAULT_EMBEDDING_PROVIDER, model: DEFAULT_EMBEDDING_MODEL },
+        modelSelection: { provider: '', model: '' },
         dimensions: null,
         encodingFormat: 'float',
     });
 
+    useEffect(() => {
+        let cancelled = false;
+
+        async function syncModelSelection() {
+            try {
+                const response = await gateway.getEmbeddingProviders();
+                if (cancelled) {
+                    return;
+                }
+
+                const availableProviders = response.providers.filter(provider => (
+                    provider.available && provider.embeddingModels.length > 0
+                ));
+
+                setSettings((prev) => {
+                    if (isEmbeddingSelectionAvailable(availableProviders, prev.modelSelection)) {
+                        return prev;
+                    }
+
+                    const nextSelection = getDefaultEmbeddingSelection(availableProviders);
+                    if (!nextSelection) {
+                        return prev;
+                    }
+
+                    return {
+                        ...prev,
+                        modelSelection: nextSelection,
+                    };
+                });
+            } catch {
+                return;
+            }
+        }
+
+        syncModelSelection();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const sendEmbedding = useCallback(async (input: string, apiKey: string) => {
         if (!input.trim() || !apiKey.trim()) return;
+
+        if (!settings.modelSelection.provider || !settings.modelSelection.model) {
+            setError('Select an available embedding model before generating');
+            return;
+        }
 
         setIsLoading(true);
         setError(null);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { ProviderInfo } from '@synapse/shared';
 import type { ModelSelection } from '@/components/playground/model-selector';
 import {
     Select,
@@ -13,34 +14,26 @@ import {
 } from '@/components/ui/select';
 import { gateway } from '@/lib/gateway';
 
-interface EmbeddingProviderInfo {
-    id: string;
-    name: string;
-    available: boolean;
-    chatModels: string[];
-    defaultChatModel?: string;
-    embeddingModels: string[];
-    defaultEmbeddingModel: string | null;
-}
-
 interface EmbeddingModelSelectorProps {
     value: ModelSelection;
     onChange: (value: ModelSelection) => void;
 }
 
-// Create a combined value for the select (provider:model)
-function toSelectValue(selection: ModelSelection): string {
+function toSelectValue(selection: ModelSelection): string | undefined {
+    if (!selection.provider || !selection.model) {
+        return undefined;
+    }
+
     return `${selection.provider}:${selection.model}`;
 }
 
-// Parse the combined value back to provider and model
 function fromSelectValue(value: string): ModelSelection {
     const [provider = '', ...modelParts] = value.split(':');
     return { provider, model: modelParts.join(':') };
 }
 
 export function EmbeddingModelSelector({ value, onChange }: EmbeddingModelSelectorProps) {
-    const [providers, setProviders] = useState<EmbeddingProviderInfo[]>([]);
+    const [providers, setProviders] = useState<ProviderInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -49,8 +42,9 @@ export function EmbeddingModelSelector({ value, onChange }: EmbeddingModelSelect
             try {
                 setLoading(true);
                 const response = await gateway.getEmbeddingProviders();
-                // Only show available providers
-                setProviders(response.providers.filter(p => p.available));
+                setProviders(response.providers.filter(provider => (
+                    provider.available && provider.embeddingModels.length > 0
+                )));
                 setError(null);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to fetch embedding providers');

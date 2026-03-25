@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import type { ProviderInfo } from '@synapse/shared';
 import type { ModelSelection } from '@/components/playground/model-selector';
-import { DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS } from '@/lib/constants';
+import { DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS } from '@/lib/constants';
 import { gateway } from '@/lib/gateway';
 
 export interface Message {
@@ -17,21 +18,88 @@ export interface ChatSettings {
     maxTokens: number;
 }
 
-// Default provider when none is configured
-const DEFAULT_PROVIDER = 'openrouter';
+function isChatSelectionAvailable(providers: ProviderInfo[], selection: ModelSelection): boolean {
+    return providers.some(provider => (
+        provider.id === selection.provider
+        && provider.chatModels.includes(selection.model)
+    ));
+}
+
+function getDefaultChatSelection(providers: ProviderInfo[]): ModelSelection | null {
+    const provider = providers.find(candidate => candidate.chatModels.length > 0);
+    if (!provider) {
+        return null;
+    }
+
+    const model = provider.defaultChatModel ?? provider.chatModels[0];
+    if (!model) {
+        return null;
+    }
+
+    return {
+        provider: provider.id,
+        model,
+    };
+}
 
 export function useChat() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [settings, setSettings] = useState<ChatSettings>({
-        modelSelection: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
+        modelSelection: { provider: '', model: '' },
         temperature: DEFAULT_TEMPERATURE,
         maxTokens: DEFAULT_MAX_TOKENS,
     });
 
+    useEffect(() => {
+        let cancelled = false;
+
+        async function syncModelSelection() {
+            try {
+                const response = await gateway.getProviders();
+                if (cancelled) {
+                    return;
+                }
+
+                const availableProviders = response.providers.filter(provider => (
+                    provider.available && provider.chatModels.length > 0
+                ));
+
+                setSettings((prev) => {
+                    if (isChatSelectionAvailable(availableProviders, prev.modelSelection)) {
+                        return prev;
+                    }
+
+                    const nextSelection = getDefaultChatSelection(availableProviders);
+                    if (!nextSelection) {
+                        return prev;
+                    }
+
+                    return {
+                        ...prev,
+                        modelSelection: nextSelection,
+                    };
+                });
+            } catch {
+                return;
+            }
+        }
+
+        syncModelSelection();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const sendMessage = useCallback(async (content: string, apiKey: string) => {
         if (!content.trim() || !apiKey.trim()) return;
+
+        if (!settings.modelSelection.provider || !settings.modelSelection.model) {
+            setError('Select an available model before sending');
+            return;
+        }
 
         const userMessage: Message = {
             id: crypto.randomUUID(),
@@ -76,7 +144,6 @@ export function useChat() {
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to get response';
             setError(errorMessage);
-            // Remove the empty assistant message on error
             setMessages(prev => prev.filter(m => m.id !== assistantMessage.id));
         } finally {
             setIsLoading(false);

@@ -25,9 +25,10 @@ export function EmbeddingInterface() {
     const [apiKey, setApiKey] = useState('');
     const [inputText, setInputText] = useState('');
     const { result, isLoading, error, latency, settings, sendEmbedding, clearResults, updateSettings } = useEmbeddings();
+    const hasModelSelection = Boolean(settings.modelSelection.provider && settings.modelSelection.model);
 
     const handleSubmit = () => {
-        if (!apiKey.trim() || !inputText.trim()) return;
+        if (!apiKey.trim() || !inputText.trim() || !hasModelSelection) return;
         sendEmbedding(inputText, apiKey);
     };
 
@@ -134,7 +135,7 @@ export function EmbeddingInterface() {
                             </p>
                             <Button
                                 onClick={handleSubmit}
-                                disabled={isLoading || !apiKey.trim() || !inputText.trim()}
+                                disabled={isLoading || !apiKey.trim() || !inputText.trim() || !hasModelSelection}
                             >
                                 {isLoading
                                     ? (
