@@ -226,14 +226,7 @@ class GatewayClient {
     }
 
     // Embedding Providers
-    async getEmbeddingProviders(): Promise<{
-        providers: Array<{
-            name: string;
-            models: string[];
-            defaultModel: string | null;
-            available: boolean;
-        }>;
-    }> {
+    async getEmbeddingProviders(): Promise<ProvidersResponse> {
         const response = await fetch(`${this.baseUrl}/admin/providers/embedding`);
         if (!response.ok) {
             throw new Error(`Failed to fetch embedding providers: ${response.statusText}`);

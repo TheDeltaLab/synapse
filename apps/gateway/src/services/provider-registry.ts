@@ -1,12 +1,24 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { customProvider, type LanguageModel, type EmbeddingModel } from 'ai';
-import { providerConfig, type ProviderName } from '../config/providers.js';
+import type { EmbeddingModel, LanguageModel } from 'ai';
+import {
+    providers,
+    getProvider as findProvider,
+    getDeployment,
+    getEmbeddingDeployments,
+    getDefaultEmbeddingModel as getConfiguredDefaultEmbeddingModel,
+    type Provider,
+    type ProviderName,
+    type SdkAdapter,
+} from '../config/providers.js';
 
 type LanguageModelV3 = Extract<LanguageModel, { specificationVersion: 'v3' }>;
+type RuntimeInstance = {
+    (modelId: string): LanguageModelV3;
+    textEmbeddingModel?: (modelId: string) => EmbeddingModel;
+};
 
 /**
  * Custom fetch wrapper that normalizes OpenRouter streaming responses.
@@ -16,7 +28,6 @@ function createNormalizingFetch(originalFetch: typeof fetch = fetch): typeof fet
     return async (url, init) => {
         const response = await originalFetch(url, init);
 
-        // Only intercept streaming responses
         if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
             return response;
         }
@@ -26,7 +37,6 @@ function createNormalizingFetch(originalFetch: typeof fetch = fetch): typeof fet
         const encoder = new TextEncoder();
         const decoder = new TextDecoder();
 
-        // Process the stream in the background
         (async () => {
             try {
                 const reader = response.body!.getReader();
@@ -43,31 +53,26 @@ function createNormalizingFetch(originalFetch: typeof fetch = fetch): typeof fet
                     for (const line of lines) {
                         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
                             try {
-                                const jsonStr = line.slice(6); // Remove 'data: ' prefix
+                                const jsonStr = line.slice(6);
                                 const data = JSON.parse(jsonStr);
 
-                                // Fix missing index in choices array
                                 if (data.choices && Array.isArray(data.choices)) {
-                                    data.choices = data.choices.map((choice: any, idx: number) => ({
+                                    data.choices = data.choices.map((choice: Record<string, unknown>, idx: number) => ({
                                         index: idx,
                                         ...choice,
                                     }));
                                 }
 
-                                // Re-serialize and send
                                 await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
                             } catch {
-                                // If JSON parsing fails, pass through as-is
                                 await writer.write(encoder.encode(line + '\n'));
                             }
                         } else {
-                            // Pass through non-data lines
                             await writer.write(encoder.encode(line + '\n'));
                         }
                     }
                 }
 
-                // Handle any remaining buffer
                 if (buffer) {
                     await writer.write(encoder.encode(buffer));
                 }
@@ -78,7 +83,6 @@ function createNormalizingFetch(originalFetch: typeof fetch = fetch): typeof fet
             }
         })();
 
-        // Return a new response with the transformed stream
         return new Response(readable, {
             status: response.status,
             statusText: response.statusText,
@@ -87,186 +91,148 @@ function createNormalizingFetch(originalFetch: typeof fetch = fetch): typeof fet
     };
 }
 
-const openai = createOpenAI({
-    apiKey: process.env.OPENAI_COMPATIBLE_API_KEY!,
-    baseURL: process.env.OPENAI_COMPATIBLE_API_BASE_URL!,
-    fetch: createNormalizingFetch(),
-});
-
-// OpenRouter provider (uncomment when needed)
-// const openrouter = createOpenRouter({
-//     apiKey: process.env.OPENROUTER_API_KEY!,
-// });
-
-const deepseek = createDeepSeek({
-    apiKey: process.env.DEEP_SEEK_API_KEY!,
-});
-
-export type ModelProvider = ReturnType<typeof customProvider>;
-
-export const languageModels: Record<string, LanguageModelV3> = {
-    'chat-model': openai.chat('gpt-5-mini'),
-    'text-model': deepseek.chat('deepseek-chat'),
-};
-
-export type SynapseModel = keyof typeof languageModels;
-
-export const modelProvider: ModelProvider = customProvider(
-    {
-        languageModels,
-    },
-);
-
 export class ProviderRegistry {
-    private providers: Map<ProviderName, any> = new Map();
-    private embeddingProviders: Map<ProviderName, any> = new Map();
+    private runtimeInstances = new Map<string, RuntimeInstance>();
 
-    constructor() {
-        this.registerProviders();
+    private getRuntimeKey(sdkAdapter: SdkAdapter, providerId: ProviderName): string {
+        return `${sdkAdapter}:${providerId}`;
     }
 
-    private registerProviders() {
-        // Register OpenAI
-        if (providerConfig.openai.apiKey) {
-            const openai = createOpenAI({
-                apiKey: providerConfig.openai.apiKey,
-                baseURL: providerConfig.openai.baseURL,
-            });
-            this.providers.set('openai', openai);
+    private getFallbackAdapter(providerId: ProviderName): SdkAdapter {
+        switch (providerId) {
+            case 'openai':
+            case 'anthropic':
+            case 'google':
+                return providerId;
+            case 'openrouter':
+                return 'openrouter-sdk';
+            default:
+                throw new Error(`Unsupported provider adapter mapping for ${providerId}`);
+        }
+    }
+
+    private getOrCreateRuntime(sdkAdapter: SdkAdapter, provider: Provider): RuntimeInstance {
+        const key = this.getRuntimeKey(sdkAdapter, provider.id as ProviderName);
+        const existingRuntime = this.runtimeInstances.get(key);
+        if (existingRuntime) {
+            return existingRuntime;
         }
 
-        // Register Anthropic
-        if (providerConfig.anthropic.apiKey) {
-            const anthropic = createAnthropic({
-                apiKey: providerConfig.anthropic.apiKey,
-                baseURL: providerConfig.anthropic.baseURL,
-            });
-            this.providers.set('anthropic', anthropic);
+        if (!provider.isAvailable()) {
+            throw new Error(`Provider ${provider.id} not found or not configured`);
         }
 
-        // Register Google
-        if (providerConfig.google.apiKey) {
-            const google = createGoogleGenerativeAI({
-                apiKey: providerConfig.google.apiKey,
-                baseURL: providerConfig.google.baseURL,
-            });
-            this.providers.set('google', google);
+        let runtime: RuntimeInstance;
+
+        switch (sdkAdapter) {
+            case 'openai':
+                runtime = createOpenAI({
+                    apiKey: provider.getApiKey(),
+                    baseURL: provider.baseUrl,
+                }) as RuntimeInstance;
+                break;
+            case 'anthropic':
+                runtime = createAnthropic({
+                    apiKey: provider.getApiKey(),
+                    baseURL: provider.baseUrl,
+                }) as RuntimeInstance;
+                break;
+            case 'google':
+                runtime = createGoogleGenerativeAI({
+                    apiKey: provider.getApiKey(),
+                    baseURL: provider.baseUrl,
+                }) as RuntimeInstance;
+                break;
+            case 'openrouter-sdk':
+                runtime = createOpenRouter({
+                    apiKey: provider.getApiKey(),
+                    baseURL: provider.baseUrl,
+                    fetch: createNormalizingFetch(),
+                }) as RuntimeInstance;
+                break;
         }
 
-        // Register OpenRouter
-        if (providerConfig.openrouter.apiKey) {
-            const openrouter = createOpenRouter({
-                apiKey: providerConfig.openrouter.apiKey,
-                baseURL: providerConfig.openrouter.baseURL,
-            });
-            this.providers.set('openrouter', openrouter);
+        this.runtimeInstances.set(key, runtime);
+        return runtime;
+    }
 
-            // Register a separate OpenAI SDK instance for OpenRouter embeddings.
-            // The native @openrouter/ai-sdk-provider does not forward the `dimensions`
-            // parameter in its doEmbed() implementation. Since OpenRouter's embedding
-            // API is fully OpenAI-compatible, we use @ai-sdk/openai which correctly
-            // passes `dimensions` through providerOptions.
-            if (providerConfig.openrouter.embeddingModels.length > 0) {
-                const openrouterEmbedding = createOpenAI({
-                    apiKey: providerConfig.openrouter.apiKey,
-                    baseURL: providerConfig.openrouter.baseURL,
-                });
-                this.embeddingProviders.set('openrouter', openrouterEmbedding);
+    getProvider(name: ProviderName): RuntimeInstance | undefined {
+        const provider = findProvider(name);
+        if (!provider?.isAvailable()) {
+            return undefined;
+        }
+
+        return this.getOrCreateRuntime(this.getFallbackAdapter(name), provider);
+    }
+
+    getModel(providerId: ProviderName, modelId: string): LanguageModelV3 {
+        const deployment = getDeployment(providerId, modelId, 'chat');
+        if (deployment) {
+            const provider = findProvider(deployment.providerId);
+            if (!provider) {
+                throw new Error(`Provider ${providerId} not found or not configured`);
             }
-        }
-    }
 
-    getProvider(name: ProviderName): any | undefined {
-        return this.providers.get(name);
-    }
-
-    getModel(provider: ProviderName, modelId: string): LanguageModelV3 {
-        const providerInstance = this.getProvider(provider);
-        if (!providerInstance) {
-            throw new Error(`Provider ${provider} not found or not configured`);
+            return this.getOrCreateRuntime(deployment.sdkAdapter, provider)(deployment.upstreamModel);
         }
 
-        return providerInstance(modelId);
+        const provider = findProvider(providerId);
+        if (!provider?.isAvailable()) {
+            throw new Error(`Provider ${providerId} not found or not configured`);
+        }
+
+        return this.getOrCreateRuntime(this.getFallbackAdapter(providerId), provider)(modelId);
     }
 
     hasProvider(name: ProviderName): boolean {
-        return this.providers.has(name);
+        return Boolean(findProvider(name)?.isAvailable());
     }
 
     getAvailableProviders(): ProviderName[] {
-        return Array.from(this.providers.keys());
+        return providers
+            .filter(provider => this.hasProvider(provider.id))
+            .map(provider => provider.id);
     }
 
-    // ============================================================
-    // Embedding Methods
-    // ============================================================
-
-    /**
-     * Check if a provider supports embeddings
-     */
-    hasEmbeddingSupport(provider: ProviderName): boolean {
-        const config = providerConfig[provider];
-        return (
-            this.hasProvider(provider)
-            && config.embeddingModels
-            && config.embeddingModels.length > 0
-        );
+    hasEmbeddingSupport(providerId: ProviderName): boolean {
+        return this.hasProvider(providerId) && getEmbeddingDeployments(providerId).length > 0;
     }
 
-    /**
-     * Get list of providers that support embeddings
-     */
     getAvailableEmbeddingProviders(): ProviderName[] {
-        return this.getAvailableProviders().filter(p =>
-            this.hasEmbeddingSupport(p),
-        );
+        return this.getAvailableProviders().filter(providerId => this.hasEmbeddingSupport(providerId));
     }
 
-    /**
-     * Get embedding model instance.
-     * Checks embeddingProviders first (for provider-specific overrides),
-     * then falls back to the general provider.
-     * @throws Error if provider not found or doesn't support embeddings
-     */
-    getEmbeddingModel(provider: ProviderName, modelId: string): EmbeddingModel {
-        if (!this.hasProvider(provider)) {
-            throw new Error(`Provider ${provider} not found or not configured`);
+    getEmbeddingModel(providerId: ProviderName, modelId: string): EmbeddingModel {
+        const provider = findProvider(providerId);
+        if (!provider?.isAvailable()) {
+            throw new Error(`Provider ${providerId} not found or not configured`);
         }
 
-        if (!this.hasEmbeddingSupport(provider)) {
-            throw new Error(`Provider ${provider} does not support embeddings`);
+        const embeddingDeployments = getEmbeddingDeployments(providerId);
+        if (embeddingDeployments.length === 0) {
+            throw new Error(`Provider ${providerId} does not support embeddings`);
         }
 
-        // Prefer dedicated embedding provider if registered (e.g. OpenRouter uses
-        // an @ai-sdk/openai instance so that `dimensions` is forwarded correctly)
-        const embeddingProvider = this.embeddingProviders.get(provider);
-        if (embeddingProvider && typeof embeddingProvider.textEmbeddingModel === 'function') {
-            return embeddingProvider.textEmbeddingModel(modelId);
+        const deployment = getDeployment(providerId, modelId, 'embedding');
+        if (!deployment) {
+            throw new Error(`Embedding model ${modelId} not configured for provider ${providerId}`);
         }
 
-        // Fall back to the general provider
-        const providerInstance = this.getProvider(provider);
-        if (typeof providerInstance.textEmbeddingModel === 'function') {
-            return providerInstance.textEmbeddingModel(modelId);
+        const runtime = this.getOrCreateRuntime(deployment.sdkAdapter, provider);
+        if (typeof runtime.textEmbeddingModel !== 'function') {
+            throw new Error(`Provider ${providerId} does not expose embedding model method`);
         }
 
-        throw new Error(`Provider ${provider} does not expose embedding model method`);
+        return runtime.textEmbeddingModel(deployment.upstreamModel);
     }
 
-    /**
-     * Get list of embedding models for a provider
-     */
-    getEmbeddingModels(provider: ProviderName): readonly string[] {
-        return providerConfig[provider].embeddingModels;
+    getEmbeddingModels(providerId: ProviderName): readonly string[] {
+        return getEmbeddingDeployments(providerId).map(deployment => deployment.modelId);
     }
 
-    /**
-     * Get default embedding model for a provider
-     */
-    getDefaultEmbeddingModel(provider: ProviderName): string | null {
-        return providerConfig[provider].defaultEmbeddingModel;
+    getDefaultEmbeddingModel(providerId: ProviderName): string | null {
+        return getConfiguredDefaultEmbeddingModel(providerId);
     }
 }
 
-// Singleton instance
 export const providerRegistry = new ProviderRegistry();

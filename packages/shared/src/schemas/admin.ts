@@ -44,10 +44,13 @@ export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
 
 // Provider schemas
 export const providerInfoSchema = z.object({
+    id: z.string(),
     name: z.string(),
-    models: z.array(z.string()),
-    defaultModel: z.string(),
-    available: z.boolean(), // true if API key is configured
+    available: z.boolean(),
+    chatModels: z.array(z.string()),
+    defaultChatModel: z.string().optional(),
+    embeddingModels: z.array(z.string()),
+    defaultEmbeddingModel: z.string().nullable(),
 });
 
 export const providersResponseSchema = z.object({

@@ -19,7 +19,14 @@ import {
     type RequestLogListResponse,
     type AnalyticsResponse,
 } from '@synapse/shared';
-import { providerConfig, type ProviderName } from '../config/providers.js';
+import {
+    providers,
+    getChatDeployments,
+    getDefaultChatModel,
+    getDefaultEmbeddingModel,
+    getEmbeddingDeployments,
+    type ProviderName,
+} from '../config/providers.js';
 import { providerRegistry } from '../services/provider-registry.js';
 
 const admin = new Hono();
@@ -246,14 +253,18 @@ admin.delete('/api-keys/:id', async (c) => {
 
 // GET /admin/providers - List available providers and their models
 admin.get('/providers', (c) => {
-    const providers = Object.entries(providerConfig).map(([name, config]) => ({
-        name,
-        models: [...config.models],
-        defaultModel: config.defaultModel,
-        available: providerRegistry.hasProvider(name as ProviderName),
-    }));
+    const response: ProvidersResponse = {
+        providers: providers.map(provider => ({
+            id: provider.id,
+            name: provider.name,
+            available: providerRegistry.hasProvider(provider.id),
+            chatModels: getChatDeployments(provider.id).map(deployment => deployment.modelId),
+            defaultChatModel: getDefaultChatModel(provider.id),
+            embeddingModels: getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId),
+            defaultEmbeddingModel: getDefaultEmbeddingModel(provider.id),
+        })),
+    };
 
-    const response: ProvidersResponse = { providers };
     return c.json(response);
 });
 
@@ -568,29 +579,20 @@ admin.get('/logs/analytics', async (c) => {
 
 // GET /admin/providers/embedding - List providers that support embeddings
 admin.get('/providers/embedding', (c) => {
-    const availableProviders = providerRegistry.getAvailableEmbeddingProviders();
-
-    const providers = availableProviders.map(name => ({
-        name,
-        models: [...(providerConfig[name].embeddingModels ?? [])],
-        defaultModel: providerConfig[name].defaultEmbeddingModel ?? null,
-        available: true,
-    }));
-
-    // Also return unavailable providers that have embedding model definitions
-    const allProviders = Object.keys(providerConfig) as ProviderName[];
-    const unavailableProviders = allProviders
-        .filter(name => !availableProviders.includes(name))
-        .filter(name => (providerConfig[name].embeddingModels?.length ?? 0) > 0)
-        .map(name => ({
-            name,
-            models: [...(providerConfig[name].embeddingModels ?? [])],
-            defaultModel: providerConfig[name].defaultEmbeddingModel ?? null,
-            available: false,
-        }));
+    const availableProviders = new Set(providerRegistry.getAvailableEmbeddingProviders());
 
     return c.json({
-        providers: [...providers, ...unavailableProviders],
+        providers: providers
+            .filter(provider => getEmbeddingDeployments(provider.id).length > 0)
+            .map(provider => ({
+                id: provider.id,
+                name: provider.name,
+                available: availableProviders.has(provider.id as ProviderName),
+                chatModels: getChatDeployments(provider.id).map(deployment => deployment.modelId),
+                defaultChatModel: getDefaultChatModel(provider.id),
+                embeddingModels: getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId),
+                defaultEmbeddingModel: getDefaultEmbeddingModel(provider.id),
+            })),
     });
 });
 

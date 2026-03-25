@@ -10,9 +10,17 @@ import { useChat } from '@/hooks/use-chat';
 export function ChatInterface() {
     const [apiKey, setApiKey] = useState('');
     const { messages, isLoading, error, settings, sendMessage, clearMessages, updateSettings } = useChat();
+    const hasModelSelection = Boolean(settings.modelSelection.provider && settings.modelSelection.model);
+
+    let inputPlaceholder = 'Type a message...';
+    if (!apiKey.trim()) {
+        inputPlaceholder = 'Enter an API key to start...';
+    } else if (!hasModelSelection) {
+        inputPlaceholder = 'Select an available model to start...';
+    }
 
     const handleSend = (content: string) => {
-        if (!apiKey.trim()) {
+        if (!apiKey.trim() || !hasModelSelection) {
             return;
         }
         sendMessage(content, apiKey);
@@ -43,8 +51,8 @@ export function ChatInterface() {
                 )}
                 <MessageInput
                     onSend={handleSend}
-                    disabled={isLoading || !apiKey.trim()}
-                    placeholder={!apiKey.trim() ? 'Enter an API key to start...' : 'Type a message...'}
+                    disabled={isLoading || !apiKey.trim() || !hasModelSelection}
+                    placeholder={inputPlaceholder}
                 />
             </div>
         </div>
