@@ -58,7 +58,9 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
         const startTime = Date.now();
 
         // Get the model instance, optionally wrapped with cache middleware
-        const baseModel = providerRegistry.getModel(provider, modelId);
+        const baseModel = providerRegistry.getModel(provider, modelId, {
+            reasoning: request.reasoning,
+        });
         const model = redisService.available
             ? wrapLanguageModel({ model: baseModel, middleware: lmCacheMiddleware })
             : baseModel;

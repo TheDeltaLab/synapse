@@ -3,6 +3,7 @@ export const SUPPORTED_PROVIDERS = [
     'openai',
     'anthropic',
     'google',
+    'deepseek',
 ] as const;
 
 export type Provider = typeof SUPPORTED_PROVIDERS[number];

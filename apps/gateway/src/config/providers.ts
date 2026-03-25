@@ -1,6 +1,6 @@
 export type ModelTask = 'chat' | 'embedding';
 export type ModelIOType = 'text' | 'image' | 'audio' | 'video' | 'embedding';
-export type ModelCapability = 'streaming' | 'tool-calling' | 'json-mode' | 'vision' | 'embedding-dimensions';
+export type ModelCapability = 'streaming' | 'tool-calling' | 'json-mode' | 'vision' | 'embedding-dimensions' | 'reasoning';
 export type ProtocolFamily = 'openai' | 'anthropic' | 'google';
 export type SdkAdapter = 'openai' | 'anthropic' | 'google' | 'openrouter-sdk';
 
@@ -44,6 +44,8 @@ export interface Deployment {
     readonly isDefault?: boolean;
     readonly enabled?: boolean;
     readonly capabilityOverrides?: Partial<Record<ModelCapability, boolean>>;
+    readonly reasoningUpstreamModel?: string;
+    readonly reasoningExtraBody?: Record<string, unknown>;
 }
 
 function envOrUndefined(key: string): string | undefined {
@@ -107,11 +109,26 @@ class OpenRouterProvider extends Provider<'openrouter'> {
     }
 }
 
+class DeepSeekProvider extends Provider<'deepseek'> {
+    constructor() {
+        super({
+            id: 'deepseek',
+            name: 'DeepSeek',
+            baseUrl: envOrUndefined('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com',
+        });
+    }
+
+    getApiKey(): string {
+        return process.env.DEEPSEEK_API_KEY?.trim() ?? '';
+    }
+}
+
 export const providers = [
     new OpenAIProvider(),
     new AnthropicProvider(),
     new GoogleProvider(),
     new OpenRouterProvider(),
+    new DeepSeekProvider(),
 ] as const satisfies readonly Provider[];
 
 export type ProviderName = (typeof providers)[number]['id'];
@@ -140,6 +157,14 @@ export const models = [
         inputTypes: ['text'],
         outputTypes: ['embedding'],
         capabilities: ['embedding-dimensions'],
+    },
+    {
+        id: 'deepseek-v3.2',
+        name: 'DeepSeek V3.2',
+        task: 'chat',
+        inputTypes: ['text'],
+        outputTypes: ['text'],
+        capabilities: ['streaming', 'tool-calling', 'json-mode', 'reasoning'],
     },
 ] as const satisfies readonly Model[];
 
@@ -173,6 +198,18 @@ export const deployments = [
         sdkAdapter: 'openai',
         upstreamModel: 'qwen/qwen3-embedding-8b',
         isDefault: true,
+    },
+    {
+        id: 'deepseek:deepseek-v3.2:chat',
+        providerId: 'deepseek',
+        modelId: 'deepseek-v3.2',
+        task: 'chat',
+        protocolFamily: 'openai',
+        sdkAdapter: 'openai',
+        upstreamModel: 'deepseek-chat',
+        isDefault: true,
+        reasoningUpstreamModel: 'deepseek-reasoner',
+        reasoningExtraBody: { thinking: { type: 'enabled' } },
     },
 ] as const satisfies readonly Deployment[];
 
