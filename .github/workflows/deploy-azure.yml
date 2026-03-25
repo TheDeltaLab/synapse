@@ -82,21 +82,21 @@ jobs:
             WORKFLOW_RUN_ID="${{ github.event.workflow_run.id }}"
             echo "Checking Docker workflow run ${WORKFLOW_RUN_ID} for built images..."
 
-            JOBS_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs" --jq '.jobs[] | {name: .name, conclusion: .conclusion}')
+            JOBS_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs")
             echo "Docker workflow jobs:"
-            echo "$JOBS_JSON"
+            echo "$JOBS_JSON" | jq -c '.jobs[] | {name: .name, conclusion: .conclusion}'
 
             DEPLOY_GATEWAY="false"
             DEPLOY_DASHBOARD="false"
 
-            if echo "$JOBS_JSON" | grep -q '"name":"Build Gateway".*"conclusion":"success"'; then
+            if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name == "Build Gateway" and .conclusion == "success")' >/dev/null; then
               DEPLOY_GATEWAY="true"
               echo "✅ Gateway image was built, will deploy"
             else
               echo "⏭️ Gateway image was not built (skipped or failed), skipping deploy"
             fi
 
-            if echo "$JOBS_JSON" | grep -q '"name":"Build Dashboard".*"conclusion":"success"'; then
+            if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name == "Build Dashboard" and .conclusion == "success")' >/dev/null; then
               DEPLOY_DASHBOARD="true"
               echo "✅ Dashboard image was built, will deploy"
             else
