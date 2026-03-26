@@ -27,16 +27,20 @@ type MockRuntime = ((modelId: string) => MockChatModelResult) & {
 vi.mock('@ai-sdk/openai', () => ({
     createOpenAI: vi.fn((config: Record<string, unknown>) => {
         mockState.openAIConfigs.push(config);
-        const instance = vi.fn((modelId: string) => ({
+        const chatFn = vi.fn((modelId: string) => ({
             modelId,
             provider: 'openai-chat',
             baseURL: config.baseURL,
-        })) as unknown as MockRuntime;
-        instance.textEmbeddingModel = vi.fn((modelId: string) => ({
+        }));
+        const embeddingFn = vi.fn((modelId: string) => ({
             modelId,
             provider: 'openai-embedding',
             baseURL: config.baseURL,
         }));
+        const instance = {
+            chat: chatFn,
+            textEmbeddingModel: embeddingFn,
+        };
         return instance;
     }),
 }));
@@ -90,6 +94,8 @@ const envKeys = [
     'GOOGLE_BASE_URL',
     'OPENROUTER_API_KEY',
     'OPENROUTER_BASE_URL',
+    'DEEPSEEK_API_KEY',
+    'DEEPSEEK_BASE_URL',
 ] as const;
 
 const originalEnv = Object.fromEntries(
@@ -135,17 +141,22 @@ describe('ProviderRegistry', () => {
         process.env.GOOGLE_API_KEY = 'test-google-key';
         process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
         process.env.OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+        process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
 
         const registry = await createRegistry();
         const googleModel = registry.getModel('google', 'gemini-2.0-flash-exp') as MockChatModelResult;
         const openRouterModel = registry.getModel('openrouter', 'gpt-5-mini') as MockChatModelResult;
+        const deepSeekModel = registry.getModel('deepseek', 'deepseek-v3.2') as MockChatModelResult;
 
         expect(googleModel.provider).toBe('google-chat');
         expect(openRouterModel.provider).toBe('openrouter-chat');
         expect(openRouterModel.hasCustomFetch).toBe(true);
+        expect(deepSeekModel.provider).toBe('openai-chat');
+        expect(deepSeekModel.modelId).toBe('deepseek-chat');
 
         const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
         const { createOpenRouter } = await import('@openrouter/ai-sdk-provider');
+        const { createOpenAI } = await import('@ai-sdk/openai');
 
         expect(vi.mocked(createGoogleGenerativeAI)).toHaveBeenCalledWith(expect.objectContaining({
             apiKey: 'test-google-key',
@@ -154,6 +165,10 @@ describe('ProviderRegistry', () => {
             apiKey: 'test-openrouter-key',
             baseURL: 'https://openrouter.ai/api/v1',
             fetch: expect.any(Function),
+        }));
+        expect(vi.mocked(createOpenAI)).toHaveBeenCalledWith(expect.objectContaining({
+            apiKey: 'test-deepseek-key',
+            baseURL: 'https://api.deepseek.com',
         }));
     });
 
@@ -190,14 +205,17 @@ describe('ProviderRegistry', () => {
         process.env.OPENAI_API_KEY = 'test-openai-key';
         process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
         process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+        process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
 
         const registry = await createRegistry();
 
         expect(registry.hasProvider('openai')).toBe(true);
         expect(registry.hasProvider('google')).toBe(false);
+        expect(registry.hasProvider('deepseek')).toBe(true);
         expect(registry.hasEmbeddingSupport('openai')).toBe(false);
         expect(registry.hasEmbeddingSupport('anthropic')).toBe(false);
         expect(registry.hasEmbeddingSupport('openrouter')).toBe(true);
+        expect(registry.hasEmbeddingSupport('deepseek')).toBe(false);
         expect(registry.getAvailableEmbeddingProviders()).toEqual(['openrouter']);
     });
 
@@ -228,5 +246,27 @@ describe('ProviderRegistry', () => {
 
         expect(() => registry.getEmbeddingModel('anthropic', 'some-model'))
             .toThrow('does not support embeddings');
+    });
+
+    it('uses reasoning upstream model with body-injecting fetch when reasoning is active', async () => {
+        process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+
+        const registry = await createRegistry();
+        const defaultModel = registry.getModel('deepseek', 'deepseek-v3.2') as MockChatModelResult;
+        const reasoningModel = registry.getModel('deepseek', 'deepseek-v3.2', { reasoning: { effort: 'medium' } }) as MockChatModelResult;
+
+        expect(defaultModel.modelId).toBe('deepseek-chat');
+        expect(reasoningModel.modelId).toBe('deepseek-reasoner');
+
+        // Verify two separate OpenAI runtimes were created (normal + reasoning with custom fetch)
+        const { createOpenAI } = await import('@ai-sdk/openai');
+        expect(vi.mocked(createOpenAI)).toHaveBeenCalledTimes(2);
+
+        // Second call should include a custom fetch for body injection
+        expect(vi.mocked(createOpenAI)).toHaveBeenNthCalledWith(2, expect.objectContaining({
+            apiKey: 'test-deepseek-key',
+            baseURL: 'https://api.deepseek.com',
+            fetch: expect.any(Function),
+        }));
     });
 });

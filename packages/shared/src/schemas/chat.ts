@@ -7,6 +7,11 @@ export const chatMessageSchema = z.object({
     name: z.string().optional(),
 });
 
+// Reasoning configuration schema
+export const reasoningSchema = z.object({
+    effort: z.enum(['none', 'low', 'medium', 'high']),
+});
+
 // Chat completion request schema
 export const chatCompletionRequestSchema = z.object({
     model: z.string().min(1),
@@ -20,6 +25,7 @@ export const chatCompletionRequestSchema = z.object({
     presence_penalty: z.number().min(-2).max(2).optional(),
     frequency_penalty: z.number().min(-2).max(2).optional(),
     user: z.string().optional(),
+    reasoning: reasoningSchema.optional(),
 });
 
 // Retry configuration schema
