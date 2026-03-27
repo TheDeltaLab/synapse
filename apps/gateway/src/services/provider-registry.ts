@@ -40,7 +40,9 @@ export class ProviderRegistry {
 
             // Look up deployment only when modelId is provided
             const deployment = modelId
-                ? getDeployment(effectiveProviderId, modelId, task!) ?? null
+                ? task !== undefined
+                    ? getDeployment(effectiveProviderId, modelId, task) ?? null
+                    : findDeploymentByModel(modelId) ?? null
                 : null;
 
             return {

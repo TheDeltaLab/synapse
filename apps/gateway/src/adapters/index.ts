@@ -23,8 +23,11 @@ export function getProviderAdapter(
     providerId: string,
     headerOverride?: string,
 ): ProviderAdapter {
-    if (headerOverride && headerOverride in adapters) {
-        return adapters[headerOverride as ResponseStyle];
+    if (headerOverride) {
+        const normalized = headerOverride.toLowerCase();
+        if (normalized in adapters) {
+            return adapters[normalized as ResponseStyle];
+        }
     }
 
     const style = providerStyleMap[providerId] ?? 'openai';

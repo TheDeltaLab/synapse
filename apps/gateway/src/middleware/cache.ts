@@ -175,8 +175,8 @@ async function collectAndCache(
             collected += decoder.decode(value, { stream: true });
         }
 
-        // Don't cache if the stream contained an error indication
-        if (!collected.includes('"error"')) {
+        // Stream was already filtered by response.ok check above, safe to cache
+        if (collected) {
             redisService.set(cacheKey, collected, ttl);
         }
     } catch {

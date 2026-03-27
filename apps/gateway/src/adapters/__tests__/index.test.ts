@@ -32,6 +32,11 @@ describe('getProviderAdapter', () => {
         expect(adapter.style).toBe('anthropic');
     });
 
+    it('should handle case-insensitive header override', () => {
+        const adapter = getProviderAdapter('openai', 'Anthropic');
+        expect(adapter.style).toBe('anthropic');
+    });
+
     it('should ignore invalid header override', () => {
         const adapter = getProviderAdapter('anthropic', 'invalid-style');
         expect(adapter.style).toBe('anthropic');
