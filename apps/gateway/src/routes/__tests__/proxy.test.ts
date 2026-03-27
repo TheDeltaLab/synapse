@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleProxy } from '../proxy.js';
 
 // Mock the provider registry
-vi.mock('../../../services/provider-registry.js', () => ({
+vi.mock('../../services/provider-registry.js', () => ({
     providerRegistry: {
         resolveEndpoint: vi.fn((_path: string, model?: string, _task?: string, providerId?: string) => ({
             url: `https://api.example.com${_path}`,
@@ -41,7 +41,7 @@ vi.mock('@synapse/dal', () => ({
 }));
 
 // Mock adapters
-vi.mock('../../../adapters/index.js', () => ({
+vi.mock('../../adapters/index.js', () => ({
     getProviderAdapter: vi.fn(() => ({
         parseRequest: vi.fn((body: string) => {
             try {
@@ -102,12 +102,12 @@ vi.mock('../../../adapters/index.js', () => ({
 }));
 
 // Mock cache middleware
-vi.mock('../../../middleware/cache.js', () => ({
+vi.mock('../../middleware/cache.js', () => ({
     cachedFetch: vi.fn(),
 }));
 
 // Mock redis service
-vi.mock('../../../services/redis-service.js', () => ({
+vi.mock('../../services/redis-service.js', () => ({
     redisService: { available: false },
 }));
 
@@ -187,7 +187,7 @@ describe('handleProxy', () => {
         });
 
         it('uses x-synapse-provider header for routing', async () => {
-            const { providerRegistry } = await import('../../../services/provider-registry.js');
+            const { providerRegistry } = await import('../../services/provider-registry.js');
 
             const res = await app.request('/v1/chat/completions', {
                 method: 'POST',
@@ -256,7 +256,7 @@ describe('handleProxy', () => {
 
     describe('GET /v1/models', () => {
         it('defaults to OpenAI when no provider and no model', async () => {
-            const { providerRegistry } = await import('../../../services/provider-registry.js');
+            const { providerRegistry } = await import('../../services/provider-registry.js');
 
             mockFetch.mockImplementation(async () => {
                 return new Response(JSON.stringify({
@@ -281,7 +281,7 @@ describe('handleProxy', () => {
         });
 
         it('uses specified provider for GET requests', async () => {
-            const { providerRegistry } = await import('../../../services/provider-registry.js');
+            const { providerRegistry } = await import('../../services/provider-registry.js');
 
             mockFetch.mockImplementation(async () => {
                 return new Response(JSON.stringify({
@@ -385,7 +385,7 @@ describe('handleProxy', () => {
         });
 
         it('returns 400 when provider resolution fails', async () => {
-            const { providerRegistry } = await import('../../../services/provider-registry.js');
+            const { providerRegistry } = await import('../../services/provider-registry.js');
             vi.mocked(providerRegistry.resolveEndpoint).mockImplementationOnce(() => {
                 throw new Error('Provider openai not found or not configured');
             });

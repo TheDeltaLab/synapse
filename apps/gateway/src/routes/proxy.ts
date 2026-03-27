@@ -1,12 +1,12 @@
 import type { Context } from 'hono';
 import { prisma, encryptContent, isEncryptionConfigured } from '@synapse/dal';
 import { HTTP_STATUS, type CacheType } from '@synapse/shared';
-import { getProviderAdapter } from '../../adapters/index.js';
-import type { ParsedResponse, ParsedEmbeddingResponse, ChatMessage } from '../../adapters/types.js';
-import type { ProviderName } from '../../config/providers.js';
-import { cachedFetch } from '../../middleware/cache.js';
-import { providerRegistry } from '../../services/provider-registry.js';
-import { redisService } from '../../services/redis-service.js';
+import { getProviderAdapter } from '../adapters/index.js';
+import type { ParsedResponse, ParsedEmbeddingResponse, ChatMessage } from '../adapters/types.js';
+import type { ProviderName } from '../config/providers.js';
+import { cachedFetch } from '../middleware/cache.js';
+import { providerRegistry } from '../services/provider-registry.js';
+import { redisService } from '../services/redis-service.js';
 
 interface ChatLogParams {
     apiKeyId: string;

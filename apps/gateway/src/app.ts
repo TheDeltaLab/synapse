@@ -4,7 +4,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { loggerMiddleware } from './middleware/logger.js';
 import { admin } from './routes/admin.js';
-import { handleProxy } from './routes/v1/proxy.js';
+import { handleProxy } from './routes/proxy.js';
 import { redisService } from './services/redis-service.js';
 
 const app = new Hono();
