@@ -348,12 +348,12 @@ describe('embeddingLogItemSchema', () => {
         expect(result.success).toBe(false);
     });
 
-    it('should reject zero inputCount', () => {
+    it('should accept zero inputCount', () => {
         const result = embeddingLogItemSchema.safeParse({
             ...validLogItem,
             inputCount: 0,
         });
-        expect(result.success).toBe(false);
+        expect(result.success).toBe(true);
     });
 
     it('should reject negative latency', () => {

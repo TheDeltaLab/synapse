@@ -1,7 +1,6 @@
 export {
     chatMessageSchema,
     chatCompletionRequestSchema,
-    reasoningSchema,
     retryConfigSchema,
     cacheConfigSchema,
     type ChatMessageInput,

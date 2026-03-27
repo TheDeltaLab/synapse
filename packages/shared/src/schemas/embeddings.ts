@@ -66,7 +66,7 @@ export const embeddingLogItemSchema = z.object({
     apiKeyId: z.string().uuid(),
     provider: z.string(),
     model: z.string(),
-    inputCount: z.number().int().positive(),
+    inputCount: z.number().int().nonnegative(),
     dimensions: z.number().int().positive().nullable(),
     requestContent: z.string().nullable(),
     tokens: z.number().int().nonnegative().nullable(),

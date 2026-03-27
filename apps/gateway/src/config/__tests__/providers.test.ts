@@ -1,18 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
     providers,
-    models,
     deployments,
     getProvider,
     getDeployment,
+    findDeploymentByModel,
     getChatDeployments,
     getEmbeddingDeployments,
     getDefaultChatModel,
     getDefaultEmbeddingModel,
+    getAvailableProviders,
+    hasEmbeddingSupport,
+    getAvailableEmbeddingProviders,
 } from '../providers.js';
 
 const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 const originalDeepSeekApiKey = process.env.DEEPSEEK_API_KEY;
+const originalGoogleApiKey = process.env.GOOGLE_API_KEY;
 
 afterEach(() => {
     if (originalOpenRouterApiKey === undefined) {
@@ -25,6 +29,12 @@ afterEach(() => {
         delete process.env.DEEPSEEK_API_KEY;
     } else {
         process.env.DEEPSEEK_API_KEY = originalDeepSeekApiKey;
+    }
+
+    if (originalGoogleApiKey === undefined) {
+        delete process.env.GOOGLE_API_KEY;
+    } else {
+        process.env.GOOGLE_API_KEY = originalGoogleApiKey;
     }
 });
 
@@ -58,55 +68,89 @@ describe('providers config', () => {
         expect(getProvider('openai')?.isAvailable()).toBe(false);
     });
 
-    it('defines the reduced chat and embedding model catalogs', () => {
-        expect(models.map(model => model.id)).toEqual([
-            'gemini-2.0-flash-exp',
-            'gpt-5-mini',
-            'qwen/qwen3-embedding-8b',
-            'deepseek-v3.2',
-        ]);
-        expect(models.map(model => model.task)).toEqual([
-            'chat',
-            'chat',
-            'embedding',
-            'chat',
-        ]);
-    });
-
-    it('maps every deployment to an existing provider and model', () => {
+    it('maps every deployment to an existing provider', () => {
         for (const deployment of deployments) {
             expect(getProvider(deployment.providerId)).toBeDefined();
-            expect(models.find(model => (
-                model.id === deployment.modelId
-                && model.task === deployment.task
-            ))).toBeDefined();
         }
     });
 
-    it('declares OpenRouter embedding deployments with the OpenAI adapter', () => {
+    it('has required baseUrl on all providers', () => {
+        for (const provider of providers) {
+            expect(typeof provider.baseUrl).toBe('string');
+            expect(provider.baseUrl.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('sets default baseUrls correctly (when no env override)', () => {
+        // These tests verify the expected defaults. If a *_BASE_URL env var is set,
+        // the provider will use that value instead — which is correct behavior.
+        const openai = getProvider('openai')!;
+        const anthropic = getProvider('anthropic')!;
+        const google = getProvider('google')!;
+        const openrouter = getProvider('openrouter')!;
+        const deepseek = getProvider('deepseek')!;
+
+        if (!process.env.OPENAI_BASE_URL) {
+            expect(openai.baseUrl).toBe('https://api.openai.com');
+        }
+        if (!process.env.ANTHROPIC_BASE_URL) {
+            expect(anthropic.baseUrl).toBe('https://api.anthropic.com');
+        }
+        if (!process.env.GOOGLE_BASE_URL) {
+            expect(google.baseUrl).toBe('https://generativelanguage.googleapis.com');
+        }
+        if (!process.env.OPENROUTER_BASE_URL) {
+            expect(openrouter.baseUrl).toBe('https://openrouter.ai/api');
+        }
+        if (!process.env.DEEPSEEK_BASE_URL) {
+            expect(deepseek.baseUrl).toBe('https://api.deepseek.com');
+        }
+
+        // All providers must have a non-empty baseUrl regardless
+        expect(openai.baseUrl.length).toBeGreaterThan(0);
+        expect(anthropic.baseUrl.length).toBeGreaterThan(0);
+        expect(google.baseUrl.length).toBeGreaterThan(0);
+        expect(openrouter.baseUrl.length).toBeGreaterThan(0);
+        expect(deepseek.baseUrl.length).toBeGreaterThan(0);
+    });
+
+    it('returns Bearer auth headers by default', () => {
+        process.env.OPENROUTER_API_KEY = 'test-key';
+        const provider = getProvider('openrouter')!;
+        const headers = provider.getAuthHeaders();
+        expect(headers).toEqual({ Authorization: 'Bearer test-key' });
+    });
+
+    it('returns Anthropic-specific auth headers', () => {
+        const provider = getProvider('anthropic')!;
+        // Set a key so getApiKey returns a non-empty value
+        process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+        const headers = provider.getAuthHeaders();
+        expect(headers).toEqual({
+            'x-api-key': 'test-anthropic-key',
+            'anthropic-version': '2023-06-01',
+        });
+    });
+
+    it('declares OpenRouter embedding deployment', () => {
         const deployment = getDeployment('openrouter', 'qwen/qwen3-embedding-8b', 'embedding');
 
         expect(deployment).toBeDefined();
-        expect(deployment?.sdkAdapter).toBe('openai');
-        expect(deployment?.upstreamModel).toBe('qwen/qwen3-embedding-8b');
+        expect(deployment?.modelId).toBe('qwen/qwen3-embedding-8b');
     });
 
-    it('declares OpenRouter chat deployments with the native OpenRouter adapter', () => {
-        const deployment = getDeployment('openrouter', 'gpt-5-mini', 'chat');
+    it('declares DeepSeek chat deployment with upstream model name', () => {
+        const deployment = getDeployment('deepseek', 'deepseek-chat', 'chat');
 
         expect(deployment).toBeDefined();
-        expect(deployment?.sdkAdapter).toBe('openrouter-sdk');
-        expect(deployment?.upstreamModel).toBe('gpt-5-mini');
+        expect(deployment?.modelId).toBe('deepseek-chat');
     });
 
-    it('declares DeepSeek chat deployment with the OpenAI adapter and reasoning override', () => {
-        const deployment = getDeployment('deepseek', 'deepseek-v3.2', 'chat');
+    it('declares a separate deepseek-reasoner deployment', () => {
+        const deployment = getDeployment('deepseek', 'deepseek-reasoner', 'chat');
 
         expect(deployment).toBeDefined();
-        expect(deployment?.sdkAdapter).toBe('openai');
-        expect(deployment?.upstreamModel).toBe('deepseek-chat');
-        expect(deployment?.reasoningUpstreamModel).toBe('deepseek-reasoner');
-        expect(deployment?.reasoningExtraBody).toEqual({ thinking: { type: 'enabled' } });
+        expect(deployment?.modelId).toBe('deepseek-reasoner');
     });
 
     it('returns chat and embedding deployments by provider', () => {
@@ -118,7 +162,8 @@ describe('providers config', () => {
             'gpt-5-mini',
         ]);
         expect(getChatDeployments('deepseek').map(deployment => deployment.modelId)).toEqual([
-            'deepseek-v3.2',
+            'deepseek-chat',
+            'deepseek-reasoner',
         ]);
         expect(getEmbeddingDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
             'qwen/qwen3-embedding-8b',
@@ -131,9 +176,77 @@ describe('providers config', () => {
         expect(getDefaultChatModel('openai')).toBeUndefined();
         expect(getDefaultChatModel('google')).toBe('gemini-2.0-flash-exp');
         expect(getDefaultChatModel('openrouter')).toBe('gpt-5-mini');
-        expect(getDefaultChatModel('deepseek')).toBe('deepseek-v3.2');
+        expect(getDefaultChatModel('deepseek')).toBe('deepseek-chat');
         expect(getDefaultEmbeddingModel('openrouter')).toBe('qwen/qwen3-embedding-8b');
         expect(getDefaultEmbeddingModel('anthropic')).toBeNull();
         expect(getDefaultEmbeddingModel('deepseek')).toBeNull();
+    });
+
+    describe('findDeploymentByModel', () => {
+        it('finds deployment by model name across providers', () => {
+            const deployment = findDeploymentByModel('gpt-5-mini', 'chat');
+            expect(deployment).toBeDefined();
+            expect(deployment?.providerId).toBe('openrouter');
+        });
+
+        it('returns undefined for unknown models', () => {
+            expect(findDeploymentByModel('unknown-model', 'chat')).toBeUndefined();
+        });
+
+        it('matches task type correctly', () => {
+            // qwen/qwen3-embedding-8b is an embedding model, not chat
+            expect(findDeploymentByModel('qwen/qwen3-embedding-8b', 'chat')).toBeUndefined();
+            expect(findDeploymentByModel('qwen/qwen3-embedding-8b', 'embedding')).toBeDefined();
+        });
+
+        it('finds deployment without task filter', () => {
+            const deployment = findDeploymentByModel('gpt-5-mini');
+            expect(deployment).toBeDefined();
+            expect(deployment?.providerId).toBe('openrouter');
+            expect(deployment?.task).toBe('chat');
+        });
+
+        it('finds embedding deployment without task filter', () => {
+            const deployment = findDeploymentByModel('qwen/qwen3-embedding-8b');
+            expect(deployment).toBeDefined();
+            expect(deployment?.task).toBe('embedding');
+        });
+    });
+
+    describe('getAvailableProviders', () => {
+        it('returns only providers with API keys set', () => {
+            process.env.OPENROUTER_API_KEY = 'test-key';
+            process.env.DEEPSEEK_API_KEY = 'test-key';
+
+            const available = getAvailableProviders();
+            expect(available).toContain('openrouter');
+            expect(available).toContain('deepseek');
+            expect(available).not.toContain('openai');
+        });
+    });
+
+    describe('hasEmbeddingSupport', () => {
+        it('returns true for providers with embedding deployments and API keys', () => {
+            process.env.OPENROUTER_API_KEY = 'test-key';
+            expect(hasEmbeddingSupport('openrouter')).toBe(true);
+        });
+
+        it('returns false for providers without embedding deployments', () => {
+            process.env.DEEPSEEK_API_KEY = 'test-key';
+            expect(hasEmbeddingSupport('deepseek')).toBe(false);
+        });
+
+        it('returns false for providers without API keys', () => {
+            expect(hasEmbeddingSupport('openrouter')).toBe(false);
+        });
+    });
+
+    describe('getAvailableEmbeddingProviders', () => {
+        it('returns only providers with both embedding support and API keys', () => {
+            process.env.OPENROUTER_API_KEY = 'test-key';
+            process.env.DEEPSEEK_API_KEY = 'test-key';
+
+            expect(getAvailableEmbeddingProviders()).toEqual(['openrouter']);
+        });
     });
 });

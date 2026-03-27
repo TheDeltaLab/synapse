@@ -1,16 +1,12 @@
 export type ModelTask = 'chat' | 'embedding';
-export type ModelIOType = 'text' | 'image' | 'audio' | 'video' | 'embedding';
-export type ModelCapability = 'streaming' | 'tool-calling' | 'json-mode' | 'vision' | 'embedding-dimensions' | 'reasoning';
-export type ProtocolFamily = 'openai' | 'anthropic' | 'google';
-export type SdkAdapter = 'openai' | 'anthropic' | 'google' | 'openrouter-sdk';
 
 export abstract class Provider<Id extends string = string> {
     readonly id: Id;
     readonly name: string;
-    readonly baseUrl?: string;
+    readonly baseUrl: string;
     readonly enabled: boolean;
 
-    constructor(p: { id: Id; name: string; baseUrl?: string; enabled?: boolean }) {
+    constructor(p: { id: Id; name: string; baseUrl: string; enabled?: boolean }) {
         this.id = p.id;
         this.name = p.name;
         this.baseUrl = p.baseUrl;
@@ -22,15 +18,10 @@ export abstract class Provider<Id extends string = string> {
     isAvailable(): boolean {
         return this.enabled && Boolean(this.getApiKey());
     }
-}
 
-export interface Model {
-    readonly id: string;
-    readonly name: string;
-    readonly task: ModelTask;
-    readonly inputTypes: readonly ModelIOType[];
-    readonly outputTypes: readonly ModelIOType[];
-    readonly capabilities: readonly ModelCapability[];
+    getAuthHeaders(): Record<string, string> {
+        return { Authorization: `Bearer ${this.getApiKey()}` };
+    }
 }
 
 export interface Deployment {
@@ -38,19 +29,13 @@ export interface Deployment {
     readonly providerId: string;
     readonly modelId: string;
     readonly task: ModelTask;
-    readonly protocolFamily: ProtocolFamily;
-    readonly sdkAdapter: SdkAdapter;
-    readonly upstreamModel: string;
     readonly isDefault?: boolean;
     readonly enabled?: boolean;
-    readonly capabilityOverrides?: Partial<Record<ModelCapability, boolean>>;
-    readonly reasoningUpstreamModel?: string;
-    readonly reasoningExtraBody?: Record<string, unknown>;
 }
 
-function envOrUndefined(key: string): string | undefined {
+function envOrDefault(key: string, defaultValue: string): string {
     const value = process.env[key]?.trim();
-    return value || undefined;
+    return value || defaultValue;
 }
 
 class OpenAIProvider extends Provider<'openai'> {
@@ -58,7 +43,7 @@ class OpenAIProvider extends Provider<'openai'> {
         super({
             id: 'openai',
             name: 'OpenAI',
-            baseUrl: envOrUndefined('OPENAI_BASE_URL'),
+            baseUrl: envOrDefault('OPENAI_BASE_URL', 'https://api.openai.com'),
         });
     }
 
@@ -72,12 +57,19 @@ class AnthropicProvider extends Provider<'anthropic'> {
         super({
             id: 'anthropic',
             name: 'Anthropic',
-            baseUrl: envOrUndefined('ANTHROPIC_BASE_URL'),
+            baseUrl: envOrDefault('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
         });
     }
 
     getApiKey(): string {
         return process.env.ANTHROPIC_API_KEY?.trim() ?? '';
+    }
+
+    override getAuthHeaders(): Record<string, string> {
+        return {
+            'x-api-key': this.getApiKey(),
+            'anthropic-version': '2023-06-01',
+        };
     }
 }
 
@@ -86,7 +78,7 @@ class GoogleProvider extends Provider<'google'> {
         super({
             id: 'google',
             name: 'Google',
-            baseUrl: envOrUndefined('GOOGLE_BASE_URL'),
+            baseUrl: envOrDefault('GOOGLE_BASE_URL', 'https://generativelanguage.googleapis.com'),
         });
     }
 
@@ -100,7 +92,7 @@ class OpenRouterProvider extends Provider<'openrouter'> {
         super({
             id: 'openrouter',
             name: 'OpenRouter',
-            baseUrl: envOrUndefined('OPENROUTER_BASE_URL') ?? 'https://openrouter.ai/api/v1',
+            baseUrl: envOrDefault('OPENROUTER_BASE_URL', 'https://openrouter.ai/api'),
         });
     }
 
@@ -114,7 +106,7 @@ class DeepSeekProvider extends Provider<'deepseek'> {
         super({
             id: 'deepseek',
             name: 'DeepSeek',
-            baseUrl: envOrUndefined('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com',
+            baseUrl: envOrDefault('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
         });
     }
 
@@ -133,50 +125,12 @@ export const providers = [
 
 export type ProviderName = (typeof providers)[number]['id'];
 
-export const models = [
-    {
-        id: 'gemini-2.0-flash-exp',
-        name: 'Gemini 2.0 Flash Exp',
-        task: 'chat',
-        inputTypes: ['text', 'image', 'audio', 'video'],
-        outputTypes: ['text'],
-        capabilities: ['streaming', 'tool-calling', 'json-mode', 'vision'],
-    },
-    {
-        id: 'gpt-5-mini',
-        name: 'GPT-5 Mini',
-        task: 'chat',
-        inputTypes: ['text', 'image'],
-        outputTypes: ['text'],
-        capabilities: ['streaming', 'tool-calling', 'json-mode', 'vision'],
-    },
-    {
-        id: 'qwen/qwen3-embedding-8b',
-        name: 'Qwen3 Embedding 8B',
-        task: 'embedding',
-        inputTypes: ['text'],
-        outputTypes: ['embedding'],
-        capabilities: ['embedding-dimensions'],
-    },
-    {
-        id: 'deepseek-v3.2',
-        name: 'DeepSeek V3.2',
-        task: 'chat',
-        inputTypes: ['text'],
-        outputTypes: ['text'],
-        capabilities: ['streaming', 'tool-calling', 'json-mode', 'reasoning'],
-    },
-] as const satisfies readonly Model[];
-
 export const deployments = [
     {
         id: 'google:gemini-2.0-flash-exp:chat',
         providerId: 'google',
         modelId: 'gemini-2.0-flash-exp',
         task: 'chat',
-        protocolFamily: 'google',
-        sdkAdapter: 'google',
-        upstreamModel: 'gemini-2.0-flash-exp',
         isDefault: true,
     },
     {
@@ -184,9 +138,6 @@ export const deployments = [
         providerId: 'openrouter',
         modelId: 'gpt-5-mini',
         task: 'chat',
-        protocolFamily: 'openai',
-        sdkAdapter: 'openrouter-sdk',
-        upstreamModel: 'gpt-5-mini',
         isDefault: true,
     },
     {
@@ -194,22 +145,20 @@ export const deployments = [
         providerId: 'openrouter',
         modelId: 'qwen/qwen3-embedding-8b',
         task: 'embedding',
-        protocolFamily: 'openai',
-        sdkAdapter: 'openai',
-        upstreamModel: 'qwen/qwen3-embedding-8b',
         isDefault: true,
     },
     {
-        id: 'deepseek:deepseek-v3.2:chat',
+        id: 'deepseek:deepseek-chat:chat',
         providerId: 'deepseek',
-        modelId: 'deepseek-v3.2',
+        modelId: 'deepseek-chat',
         task: 'chat',
-        protocolFamily: 'openai',
-        sdkAdapter: 'openai',
-        upstreamModel: 'deepseek-chat',
         isDefault: true,
-        reasoningUpstreamModel: 'deepseek-reasoner',
-        reasoningExtraBody: { thinking: { type: 'enabled' } },
+    },
+    {
+        id: 'deepseek:deepseek-reasoner:chat',
+        providerId: 'deepseek',
+        modelId: 'deepseek-reasoner',
+        task: 'chat',
     },
 ] as const satisfies readonly Deployment[];
 
@@ -243,6 +192,15 @@ export function getDeployment(providerId: string, modelId: string, task: ModelTa
     return deployment;
 }
 
+export function findDeploymentByModel(modelId: string, task?: ModelTask): Deployment | undefined {
+    return deploymentList.find(deployment => (
+        deployment.modelId === modelId
+        && (task === undefined || deployment.task === task)
+        && deployment.enabled !== false
+        && isProviderEnabled(deployment.providerId)
+    ));
+}
+
 export function getChatDeployments(providerId: string): Deployment[] {
     if (!isProviderEnabled(providerId)) {
         return [];
@@ -273,4 +231,20 @@ export function getDefaultChatModel(providerId: string): string | undefined {
 
 export function getDefaultEmbeddingModel(providerId: string): string | null {
     return getEmbeddingDeployments(providerId).find(deployment => deployment.isDefault)?.modelId ?? null;
+}
+
+export function getAvailableProviders(): ProviderName[] {
+    return providers
+        .filter(provider => provider.isAvailable())
+        .map(provider => provider.id);
+}
+
+export function hasEmbeddingSupport(providerId: string): boolean {
+    const provider = providerMap.get(providerId);
+    if (!provider?.isAvailable()) return false;
+    return getEmbeddingDeployments(providerId).length > 0;
+}
+
+export function getAvailableEmbeddingProviders(): ProviderName[] {
+    return getAvailableProviders().filter(id => hasEmbeddingSupport(id));
 }

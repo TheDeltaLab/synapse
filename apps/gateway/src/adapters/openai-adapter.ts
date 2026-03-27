@@ -1,55 +1,119 @@
-import type { ChunkMetadata, StreamingAdapter } from './types.js';
+import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage } from './types.js';
 
-/**
- * OpenAI-style SSE streaming adapter
- * Format: data: {"choices":[{"delta":{"content":"..."}}]}\n\n
- */
-export class OpenAIAdapter implements StreamingAdapter {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export class OpenAIAdapter implements ProviderAdapter {
     readonly style = 'openai';
 
-    formatChunk(chunk: string, metadata: ChunkMetadata): string {
-        const data = {
-            id: metadata.id,
-            object: 'chat.completion.chunk',
-            created: metadata.created,
-            model: metadata.model,
-            choices: [
-                {
-                    index: metadata.index ?? 0,
-                    delta: { content: chunk },
-                    finish_reason: null,
-                },
-            ],
-        };
-        return `data: ${JSON.stringify(data)}\n\n`;
+    parseRequest(requestBody: string): ParsedRequest {
+        try {
+            const body = JSON.parse(requestBody);
+
+            if (Array.isArray(body.messages)) {
+                return {
+                    type: 'chat',
+                    model: body.model,
+                    stream: body.stream ?? false,
+                    messages: body.messages.map((m: any) => ({
+                        role: String(m.role ?? ''),
+                        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+                    })),
+                };
+            }
+
+            if (body.input !== undefined) {
+                const inputs = Array.isArray(body.input)
+                    ? body.input.map((i: any) => (typeof i === 'string' ? i : JSON.stringify(i)))
+                    : [typeof body.input === 'string' ? body.input : JSON.stringify(body.input)];
+                return {
+                    type: 'embedding',
+                    model: body.model,
+                    inputs,
+                };
+            }
+
+            return { type: 'unknown', model: body.model, stream: body.stream ?? false };
+        } catch {
+            return { type: 'unknown' };
+        }
     }
 
-    formatFinalChunk(metadata: ChunkMetadata): string {
-        const data = {
-            id: metadata.id,
-            object: 'chat.completion.chunk',
-            created: metadata.created,
-            model: metadata.model,
-            choices: [
-                {
-                    index: metadata.index ?? 0,
-                    delta: {},
-                    finish_reason: 'stop',
-                },
-            ],
-        };
-        return `data: ${JSON.stringify(data)}\n\n`;
+    parseResponse(responseBody: string): ParsedResponse {
+        try {
+            const body = JSON.parse(responseBody);
+            const content = body.choices?.[0]?.message?.content ?? null;
+            const usage = this.extractUsage(body.usage);
+            return { content, usage };
+        } catch {
+            return { content: null, usage: null };
+        }
     }
 
-    formatDone(): string {
-        return 'data: [DONE]\n\n';
-    }
+    parseStreamingResponse(ssePayload: string): ParsedResponse {
+        const chunks = this.parseSSEChunks(ssePayload);
+        let content = '';
+        let usage: TokenUsage | null = null;
 
-    getResponseHeaders(): Record<string, string> {
+        for (const chunk of chunks) {
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (typeof delta === 'string') {
+                content += delta;
+            }
+            if (chunk.usage) {
+                usage = this.extractUsage(chunk.usage);
+            }
+        }
+
         return {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
+            content: content || null,
+            usage,
         };
+    }
+
+    parseEmbeddingResponse(responseBody: string): ParsedEmbeddingResponse {
+        try {
+            const body = JSON.parse(responseBody);
+            const usage = body.usage;
+            if (!usage) return { tokens: null };
+            const tokens = typeof usage.total_tokens === 'number'
+                ? usage.total_tokens
+                : typeof usage.prompt_tokens === 'number'
+                    ? usage.prompt_tokens
+                    : null;
+            return { tokens };
+        } catch {
+            return { tokens: null };
+        }
+    }
+
+    private extractUsage(usage: any): TokenUsage | null {
+        if (!usage) return null;
+
+        const promptTokens = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : 0;
+        const completionTokens = typeof usage.completion_tokens === 'number' ? usage.completion_tokens : 0;
+
+        return {
+            inputTokens: promptTokens,
+            outputTokens: completionTokens,
+        };
+    }
+
+    private parseSSEChunks(payload: string): any[] {
+        const chunks: any[] = [];
+        const lines = payload.split('\n');
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+                chunks.push(JSON.parse(data));
+            } catch {
+                // skip malformed chunks
+            }
+        }
+
+        return chunks;
     }
 }

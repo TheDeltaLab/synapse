@@ -158,8 +158,8 @@ export default function EmbeddingLogsPage() {
                                                 <TableCell className="font-mono text-sm">
                                                     {log.model}
                                                 </TableCell>
-                                                <TableCell className="max-w-xs break-all text-sm">
-                                                    {log.requestContent ?? '-'}
+                                                <TableCell className="max-w-xs text-sm">
+                                                    <EmbeddingContentPreview content={log.requestContent} />
                                                 </TableCell>
                                                 <TableCell className="text-right text-sm">
                                                     {log.inputCount}
@@ -228,4 +228,39 @@ export default function EmbeddingLogsPage() {
             </div>
         </div>
     );
+}
+
+const MAX_PREVIEW_LENGTH = 80;
+
+function EmbeddingContentPreview({ content }: { content: string | null }) {
+    if (!content) return <span className="text-muted-foreground">-</span>;
+
+    // Try parsing as JSON array of input strings (new format)
+    try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+            const texts = parsed.filter((item): item is string => typeof item === 'string');
+            if (texts.length > 0) {
+                const preview = texts.length === 1
+                    ? texts[0]!
+                    : texts.map((t, i) => `${i + 1}. ${t}`).join(' ');
+                const truncated = preview.length > MAX_PREVIEW_LENGTH
+                    ? preview.slice(0, MAX_PREVIEW_LENGTH) + '...'
+                    : preview;
+                return (
+                    <span className="break-all" title={texts.join('\n')}>
+                        {truncated}
+                    </span>
+                );
+            }
+        }
+    } catch {
+        // Not valid JSON — fall through to raw display
+    }
+
+    // Fallback: display raw content truncated
+    const truncated = content.length > MAX_PREVIEW_LENGTH
+        ? content.slice(0, MAX_PREVIEW_LENGTH) + '...'
+        : content;
+    return <span className="break-all" title={content}>{truncated}</span>;
 }
