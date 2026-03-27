@@ -8,8 +8,7 @@ vi.mock('../../services/provider-registry.js', () => ({
         resolveEndpoint: vi.fn((_path: string, model?: string, _task?: string, providerId?: string) => ({
             url: `https://api.example.com${_path}`,
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer test-key',
+                Authorization: 'Bearer test-key',
             },
             deployment: model ? { modelId: model, providerId: providerId ?? 'openai' } : null,
             providerId: providerId ?? 'openai',

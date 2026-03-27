@@ -56,8 +56,8 @@ describe('ProviderRegistry', () => {
             );
 
             expect(endpoint.url).toBe('https://api.deepseek.com/v1/chat/completions');
-            expect(endpoint.headers['Content-Type']).toBe('application/json');
             expect(endpoint.headers['Authorization']).toBe('Bearer test-deepseek-key');
+            expect(endpoint.headers['Content-Type']).toBeUndefined();
             expect(endpoint.providerId).toBe('deepseek');
             expect(endpoint.deployment).toBeDefined();
             expect(endpoint.deployment?.modelId).toBe('deepseek-chat');

@@ -89,6 +89,10 @@ export function isCacheEnabled(): boolean {
 
 /**
  * Compute a deterministic cache key from URL and body.
+ * TODO: This ignores forwarded request headers (e.g. anthropic-beta, accept).
+ * Two requests with the same body but different headers can produce different
+ * upstream responses yet share a cache entry. Consider including a normalized
+ * subset of forwarded headers in the hash.
  */
 function computeCacheKey(url: string, body: string): string {
     const hash = createHash('sha256').update(url + body).digest('hex');

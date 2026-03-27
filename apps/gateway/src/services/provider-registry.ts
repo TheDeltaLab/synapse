@@ -48,7 +48,6 @@ export class ProviderRegistry {
             return {
                 url: provider.baseUrl + requestPath,
                 headers: {
-                    'Content-Type': 'application/json',
                     ...provider.getAuthHeaders(),
                 },
                 deployment,
@@ -57,6 +56,9 @@ export class ProviderRegistry {
         }
 
         // No provider specified — model-based routing
+        // TODO: findDeploymentByModel searches across all providers; if multiple providers
+        // share a model name, this could attach a deployment from the wrong provider.
+        // Consider restricting the lookup to the selected provider.
         const deployment = findDeploymentByModel(modelId!, task);
         if (deployment) {
             const provider = findProvider(deployment.providerId);
@@ -67,7 +69,6 @@ export class ProviderRegistry {
             return {
                 url: provider.baseUrl + requestPath,
                 headers: {
-                    'Content-Type': 'application/json',
                     ...provider.getAuthHeaders(),
                 },
                 deployment,

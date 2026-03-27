@@ -135,6 +135,9 @@ export async function handleProxy(c: Context): Promise<Response> {
         let isStreaming = false;
 
         // Parse body for methods that have one
+        // TODO: c.req.text() forces text decoding which corrupts binary/multipart payloads
+        // (e.g. file uploads to /v1/files). For true transparent proxying, forward
+        // c.req.raw.body stream directly and only clone+parse when Content-Type is JSON.
         if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
             rawBody = await c.req.text();
             try {
@@ -179,6 +182,9 @@ export async function handleProxy(c: Context): Promise<Response> {
         let cacheTtl = 0;
 
         // Only cache POST requests when Redis is available
+        // TODO: This caches all POST requests indiscriminately. Non-idempotent endpoints
+        // (e.g. /v1/files, /v1/fine_tuning/jobs) should not be cached. Consider restricting
+        // caching to specific safe paths like /v1/chat/completions and /v1/embeddings.
         if (method === 'POST' && redisService.available) {
             const result = await cachedFetch(
                 upstreamUrl,

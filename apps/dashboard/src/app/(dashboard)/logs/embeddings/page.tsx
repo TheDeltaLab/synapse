@@ -248,6 +248,9 @@ function EmbeddingContentPreview({ content }: { content: string | null }) {
                     ? preview.slice(0, MAX_PREVIEW_LENGTH) + '...'
                     : preview;
                 return (
+                    // TODO: For large embedding inputs, texts.join('\n') in the title attribute
+                    // can create very large DOM attributes and degrade rendering. Consider
+                    // truncating the title or using a bounded tooltip.
                     <span className="break-all" title={texts.join('\n')}>
                         {truncated}
                     </span>
