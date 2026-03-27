@@ -5,6 +5,55 @@ import { redisService } from '../services/redis-service.js';
 
 const KEY_PREFIX = 'fetch_cache:';
 
+// Headers that MUST NOT be forwarded between hops (RFC 2616 §13.5.1)
+const HOP_BY_HOP_HEADERS = new Set([
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+]);
+
+/**
+ * Structured cache entry that preserves upstream status and headers.
+ */
+export interface CacheEntry {
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+}
+
+/**
+ * Convert Headers to a plain object, stripping hop-by-hop headers.
+ */
+function serializeHeaders(headers: Headers): Record<string, string> {
+    const result: Record<string, string> = {};
+    headers.forEach((value, key) => {
+        if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+            result[key] = value;
+        }
+    });
+    return result;
+}
+
+/**
+ * Parse a cached value, supporting both new CacheEntry format and legacy plain strings.
+ */
+function parseCacheEntry(cached: string): CacheEntry {
+    try {
+        const parsed = JSON.parse(cached) as Record<string, unknown>;
+        if (typeof parsed === 'object' && parsed !== null && typeof parsed.body === 'string') {
+            return parsed as unknown as CacheEntry;
+        }
+    } catch {
+        // Not JSON — legacy plain string
+    }
+    return { status: 200, headers: { 'content-type': 'application/json' }, body: cached };
+}
+
 /**
  * Context stored in AsyncLocalStorage for cache metadata communication
  * between the middleware and the chat handler.
@@ -80,32 +129,34 @@ export async function cachedFetch(
     try {
         const cached = await redisService.get(cacheKey);
         if (cached) {
+            const entry = parseCacheEntry(cached);
+
             if (options.streaming) {
                 // Replay cached body as a streaming response
                 const encoder = new TextEncoder();
                 const stream = new ReadableStream({
                     start(controller) {
-                        controller.enqueue(encoder.encode(cached));
+                        controller.enqueue(encoder.encode(entry.body));
                         controller.close();
                     },
                 });
 
+                const responseHeaders = new Headers(entry.headers);
+                responseHeaders.set('Cache-Control', 'no-cache');
+                responseHeaders.set('Connection', 'keep-alive');
+
                 const response = new Response(stream, {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'text/event-stream',
-                        'Cache-Control': 'no-cache',
-                        'Connection': 'keep-alive',
-                    },
+                    status: entry.status,
+                    headers: responseHeaders,
                 });
 
                 return { response, cacheHit: true, cacheKey, cacheTtl: ttl };
             }
 
             // Non-streaming: return cached body as Response
-            const response = new Response(cached, {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
+            const response = new Response(entry.body, {
+                status: entry.status,
+                headers: entry.headers,
             });
 
             return { response, cacheHit: true, cacheKey, cacheTtl: ttl };
@@ -126,8 +177,8 @@ export async function cachedFetch(
         // Tee the stream: one for client, one for caching
         const [clientStream, cacheStream] = response.body.tee();
 
-        // Collect and cache in background
-        collectAndCache(cacheStream, cacheKey, ttl);
+        // Collect and cache in background (include status + headers)
+        collectAndCache(cacheStream, cacheKey, ttl, response.status, serializeHeaders(response.headers));
 
         const proxyResponse = new Response(clientStream, {
             status: response.status,
@@ -142,7 +193,12 @@ export async function cachedFetch(
     const responseBody = await response.text();
 
     try {
-        redisService.set(cacheKey, responseBody, ttl);
+        const entry: CacheEntry = {
+            status: response.status,
+            headers: serializeHeaders(response.headers),
+            body: responseBody,
+        };
+        redisService.set(cacheKey, JSON.stringify(entry), ttl);
     } catch {
         // Ignore cache write errors
     }
@@ -157,12 +213,14 @@ export async function cachedFetch(
 }
 
 /**
- * Collect a ReadableStream into a string and store it in Redis.
+ * Collect a ReadableStream into a string and store it in Redis as a CacheEntry.
  */
 async function collectAndCache(
     stream: ReadableStream<Uint8Array>,
     cacheKey: string,
     ttl: number,
+    status: number,
+    headers: Record<string, string>,
 ): Promise<void> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -177,7 +235,8 @@ async function collectAndCache(
 
         // Stream was already filtered by response.ok check above, safe to cache
         if (collected) {
-            redisService.set(cacheKey, collected, ttl);
+            const entry: CacheEntry = { status, headers, body: collected };
+            redisService.set(cacheKey, JSON.stringify(entry), ttl);
         }
     } catch {
         // Ignore collection/cache errors

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleProxy } from '../proxy.js';
+import { handleProxy, buildUpstreamHeaders, filterResponseHeaders } from '../proxy.js';
 
 // Mock the provider registry
 vi.mock('../../services/provider-registry.js', () => ({
@@ -138,7 +138,11 @@ describe('handleProxy', () => {
                 usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
             }), {
                 status: 200,
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-request-id': 'req-abc123',
+                    'x-ratelimit-remaining': '99',
+                },
             });
         });
     });
@@ -162,7 +166,8 @@ describe('handleProxy', () => {
                 expect.objectContaining({
                     method: 'POST',
                     headers: expect.objectContaining({
-                        Authorization: 'Bearer test-key',
+                        // Headers normalized to lowercase by buildUpstreamHeaders
+                        authorization: 'Bearer test-key',
                     }),
                 }),
             );
@@ -437,6 +442,191 @@ describe('handleProxy', () => {
             expect(res.status).toBe(200);
             const json = await parseJson(res);
             expect(json.ok).toBe(true);
+        });
+    });
+
+    describe('header forwarding', () => {
+        it('forwards upstream response headers to client', async () => {
+            const res = await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.headers.get('x-request-id')).toBe('req-abc123');
+            expect(res.headers.get('x-ratelimit-remaining')).toBe('99');
+        });
+
+        it('forwards client request headers upstream, stripping authorization and x-synapse-*', async () => {
+            await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-beta': 'messages-2024-12-19',
+                    'x-synapse-provider': 'anthropic',
+                    'x-synapse-response-style': 'openai',
+                    'Authorization': 'Bearer user-token',
+                },
+                body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            const fetchCall = mockFetch.mock.calls[0]!;
+            const sentHeaders = fetchCall[1]!.headers as Record<string, string>;
+
+            // Client headers should be forwarded (all lowercase after Headers normalization)
+            expect(sentHeaders['accept']).toBeDefined();
+            expect(sentHeaders['anthropic-version']).toBeDefined();
+            expect(sentHeaders['anthropic-beta']).toBeDefined();
+
+            // Endpoint auth should override client auth (lowercase)
+            expect(sentHeaders['authorization']).toBe('Bearer test-key');
+
+            // x-synapse-* headers must NOT be forwarded upstream
+            const allKeys = Object.keys(sentHeaders).map(k => k.toLowerCase());
+            expect(allKeys.some(k => k.startsWith('x-synapse-'))).toBe(false);
+        });
+
+        it('strips hop-by-hop headers from response', async () => {
+            mockFetch.mockImplementation(async () => {
+                return new Response(JSON.stringify({ ok: true }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Transfer-Encoding': 'chunked',
+                        'Connection': 'keep-alive',
+                        'x-custom': 'preserved',
+                    },
+                });
+            });
+
+            const res = await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            expect(res.headers.get('x-custom')).toBe('preserved');
+            // Hop-by-hop headers should be stripped
+            expect(res.headers.get('transfer-encoding')).toBeNull();
+        });
+
+        it('forwards upstream headers on streaming responses', async () => {
+            const encoder = new TextEncoder();
+            const sseData = 'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\ndata: [DONE]\n\n';
+            const stream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(encoder.encode(sseData));
+                    controller.close();
+                },
+            });
+
+            mockFetch.mockImplementation(async () => {
+                return new Response(stream, {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'text/event-stream',
+                        'x-request-id': 'stream-req-456',
+                        'openai-model': 'gpt-4o-2024-05-13',
+                    },
+                });
+            });
+
+            const res = await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                    stream: true,
+                }),
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.headers.get('x-request-id')).toBe('stream-req-456');
+            expect(res.headers.get('openai-model')).toBe('gpt-4o-2024-05-13');
+            expect(res.headers.get('Cache-Control')).toBe('no-cache');
+        });
+    });
+
+    describe('buildUpstreamHeaders', () => {
+        it('merges client headers with endpoint headers, endpoint wins', () => {
+            const incoming = new Headers({
+                'Accept': 'application/json',
+                'Authorization': 'Bearer user-key',
+                'Content-Type': 'application/json',
+                'anthropic-version': '2023-06-01',
+            });
+            const endpointHeaders = {
+                'Authorization': 'Bearer provider-key',
+                'Content-Type': 'application/json',
+            };
+
+            const result = buildUpstreamHeaders(incoming, endpointHeaders);
+
+            // Headers API normalizes keys to lowercase
+            expect(result['accept']).toBe('application/json');
+            expect(result['anthropic-version']).toBe('2023-06-01');
+            // Endpoint auth overrides (normalized to lowercase by Headers)
+            expect(result['authorization']).toBe('Bearer provider-key');
+            // No duplicate content-type keys
+            expect(Object.keys(result).filter(k => k.toLowerCase() === 'content-type')).toHaveLength(1);
+        });
+
+        it('strips x-synapse-*, host, content-length, and hop-by-hop headers', () => {
+            const incoming = new Headers({
+                'Host': 'gateway.local',
+                'Content-Length': '42',
+                'x-synapse-provider': 'openai',
+                'x-synapse-response-style': 'native',
+                'Connection': 'keep-alive',
+                'Accept': '*/*',
+            });
+
+            const result = buildUpstreamHeaders(incoming, {});
+
+            expect(result['accept']).toBe('*/*');
+            // All of these should be stripped
+            expect(result['host']).toBeUndefined();
+            expect(result['content-length']).toBeUndefined();
+            expect(result['x-synapse-provider']).toBeUndefined();
+            expect(result['x-synapse-response-style']).toBeUndefined();
+            expect(result['connection']).toBeUndefined();
+        });
+    });
+
+    describe('filterResponseHeaders', () => {
+        it('copies all headers except hop-by-hop and encoding headers', () => {
+            const upstream = new Headers({
+                'Content-Type': 'application/json',
+                'x-request-id': 'abc',
+                'Transfer-Encoding': 'chunked',
+                'Connection': 'keep-alive',
+                'Content-Encoding': 'gzip',
+                'Content-Length': '1234',
+            });
+
+            const filtered = filterResponseHeaders(upstream);
+
+            expect(filtered.get('Content-Type')).toBe('application/json');
+            expect(filtered.get('x-request-id')).toBe('abc');
+            // Hop-by-hop headers stripped
+            expect(filtered.get('Transfer-Encoding')).toBeNull();
+            expect(filtered.get('Connection')).toBeNull();
+            // Encoding headers stripped (body already decompressed by fetch)
+            expect(filtered.get('Content-Encoding')).toBeNull();
+            expect(filtered.get('Content-Length')).toBeNull();
         });
     });
 });

@@ -8,6 +8,87 @@ import { cachedFetch } from '../middleware/cache.js';
 import { providerRegistry } from '../services/provider-registry.js';
 import { redisService } from '../services/redis-service.js';
 
+// Headers that MUST NOT be forwarded between hops (RFC 2616 §13.5.1)
+const HOP_BY_HOP_HEADERS = new Set([
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+]);
+
+// Headers stripped from client requests before forwarding upstream.
+// accept-encoding is stripped so Node.js fetch handles compression negotiation
+// and auto-decompression transparently.
+const STRIPPED_REQUEST_HEADERS = new Set([
+    'host',
+    'authorization',
+    'content-length',
+    'accept-encoding',
+]);
+
+/**
+ * Build upstream request headers by merging client headers with endpoint auth headers.
+ * Strips hop-by-hop, host, authorization, content-length, and x-synapse-* headers.
+ * Endpoint headers (auth) take precedence over client headers.
+ */
+export function buildUpstreamHeaders(
+    incomingHeaders: Headers,
+    endpointHeaders: Record<string, string>,
+): Record<string, string> {
+    // Use a Headers object to ensure case-insensitive deduplication.
+    // Plain objects with both 'content-type' and 'Content-Type' cause
+    // duplicate headers in Node.js fetch, which some upstreams reject.
+    const merged = new Headers();
+
+    incomingHeaders.forEach((value, key) => {
+        const lower = key.toLowerCase();
+        if (HOP_BY_HOP_HEADERS.has(lower)) return;
+        if (STRIPPED_REQUEST_HEADERS.has(lower)) return;
+        if (lower.startsWith('x-synapse-')) return;
+        merged.set(key, value);
+    });
+
+    // Endpoint auth headers override client headers
+    for (const [key, value] of Object.entries(endpointHeaders)) {
+        merged.set(key, value);
+    }
+
+    // Convert back to plain object (keys are lowercase from Headers API)
+    const result: Record<string, string> = {};
+    merged.forEach((value, key) => {
+        result[key] = value;
+    });
+    return result;
+}
+
+// Headers stripped from upstream responses.
+// content-encoding is stripped because Node.js fetch transparently decompresses
+// the response body — forwarding it would cause the client to decompress again.
+const STRIPPED_RESPONSE_HEADERS = new Set([
+    'content-encoding',
+    'content-length',
+]);
+
+/**
+ * Filter upstream response headers, stripping hop-by-hop and encoding headers.
+ */
+export function filterResponseHeaders(upstreamHeaders: Headers): Headers {
+    const filtered = new Headers();
+
+    upstreamHeaders.forEach((value, key) => {
+        const lower = key.toLowerCase();
+        if (HOP_BY_HOP_HEADERS.has(lower)) return;
+        if (STRIPPED_RESPONSE_HEADERS.has(lower)) return;
+        filtered.set(key, value);
+    });
+
+    return filtered;
+}
+
 interface ChatLogParams {
     apiKeyId: string;
     provider: string;
@@ -83,10 +164,10 @@ export async function handleProxy(c: Context): Promise<Response> {
 
         const upstreamUrl = endpoint.url + queryString;
 
-        // Build fetch options
+        // Build fetch options — forward client headers, overlay auth
         const fetchInit: RequestInit = {
             method,
-            headers: endpoint.headers,
+            headers: buildUpstreamHeaders(c.req.raw.headers, endpoint.headers),
         };
         if (rawBody !== undefined) {
             fetchInit.body = rawBody;
@@ -184,8 +265,6 @@ async function handleChatResponse(
     const { upstreamResponse, isStreaming, messages, model, endpoint, adapter, startTime, apiKeyId, cacheHit, cacheTtl } = ctx;
 
     if (isStreaming) {
-        const contentType = upstreamResponse.headers.get('Content-Type') || 'text/event-stream';
-
         if (!upstreamResponse.body) {
             logChatRequest({
                 apiKeyId,
@@ -198,9 +277,12 @@ async function handleChatResponse(
                 cacheType: cacheHit ? 'exact' : 'none',
                 cacheTtl: cacheHit ? cacheTtl : undefined,
             });
+            const headers = filterResponseHeaders(upstreamResponse.headers);
+            headers.set('Cache-Control', 'no-cache');
+            headers.set('Connection', 'keep-alive');
             return new Response(null, {
                 status: upstreamResponse.status,
-                headers: { 'Content-Type': contentType },
+                headers,
             });
         }
 
@@ -225,13 +307,13 @@ async function handleChatResponse(
             console.error('Stream log collection error:', err);
         });
 
+        const streamHeaders = filterResponseHeaders(upstreamResponse.headers);
+        streamHeaders.set('Cache-Control', 'no-cache');
+        streamHeaders.set('Connection', 'keep-alive');
+
         return new Response(clientStream, {
             status: upstreamResponse.status,
-            headers: {
-                'Content-Type': contentType,
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
+            headers: streamHeaders,
         });
     }
 
@@ -254,9 +336,7 @@ async function handleChatResponse(
 
     return new Response(responseBody, {
         status: upstreamResponse.status,
-        headers: {
-            'Content-Type': upstreamResponse.headers.get('Content-Type') || 'application/json',
-        },
+        headers: filterResponseHeaders(upstreamResponse.headers),
     });
 }
 
@@ -294,9 +374,7 @@ async function handleEmbeddingResponse(
 
     return new Response(responseBody, {
         status: upstreamResponse.status,
-        headers: {
-            'Content-Type': upstreamResponse.headers.get('Content-Type') || 'application/json',
-        },
+        headers: filterResponseHeaders(upstreamResponse.headers),
     });
 }
 
@@ -320,7 +398,6 @@ async function handleGenericResponse(
     const { upstreamResponse, isStreaming, model, endpoint, startTime, apiKeyId, cacheHit, cacheTtl } = ctx;
 
     if (isStreaming && upstreamResponse.body) {
-        const contentType = upstreamResponse.headers.get('Content-Type') || 'text/event-stream';
         const [clientStream, logStream] = upstreamResponse.body.tee();
 
         drainStream(logStream).then((responsePayload) => {
@@ -339,13 +416,13 @@ async function handleGenericResponse(
             console.error('Stream log collection error:', err);
         });
 
+        const genericStreamHeaders = filterResponseHeaders(upstreamResponse.headers);
+        genericStreamHeaders.set('Cache-Control', 'no-cache');
+        genericStreamHeaders.set('Connection', 'keep-alive');
+
         return new Response(clientStream, {
             status: upstreamResponse.status,
-            headers: {
-                'Content-Type': contentType,
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
+            headers: genericStreamHeaders,
         });
     }
 
@@ -365,9 +442,7 @@ async function handleGenericResponse(
 
     return new Response(responseBody, {
         status: upstreamResponse.status,
-        headers: {
-            'Content-Type': upstreamResponse.headers.get('Content-Type') || 'application/json',
-        },
+        headers: filterResponseHeaders(upstreamResponse.headers),
     });
 }
 

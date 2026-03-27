@@ -64,9 +64,14 @@ describe('Cache Middleware', () => {
     });
 
     describe('cachedFetch - non-streaming', () => {
-        it('should return cached response on hit', async () => {
+        it('should return cached response on hit with stored status and headers', async () => {
             const cachedBody = JSON.stringify({ choices: [{ message: { content: 'cached' } }] });
-            mockRedisService.get.mockResolvedValue(cachedBody);
+            const cacheEntry = JSON.stringify({
+                status: 200,
+                headers: { 'content-type': 'application/json', 'x-request-id': 'cached-req-1' },
+                body: cachedBody,
+            });
+            mockRedisService.get.mockResolvedValue(cacheEntry);
 
             const result = await cachedFetch(
                 'https://api.example.com/v1/chat/completions',
@@ -76,17 +81,37 @@ describe('Cache Middleware', () => {
 
             expect(result.cacheHit).toBe(true);
             expect(mockFetch).not.toHaveBeenCalled();
+            expect(result.response.status).toBe(200);
+            expect(result.response.headers.get('x-request-id')).toBe('cached-req-1');
 
             const body = await result.response.text();
             expect(body).toBe(cachedBody);
         });
 
-        it('should fetch and cache on miss', async () => {
+        it('should handle legacy plain-string cache entries', async () => {
+            const legacyBody = JSON.stringify({ choices: [{ message: { content: 'legacy' } }] });
+            // Simulate a legacy entry that is a JSON body without the CacheEntry wrapper.
+            // parseCacheEntry will see it has no .body field and treat as legacy.
+            mockRedisService.get.mockResolvedValue(legacyBody);
+
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
+            );
+
+            expect(result.cacheHit).toBe(true);
+            expect(result.response.status).toBe(200);
+            const body = await result.response.text();
+            expect(body).toBe(legacyBody);
+        });
+
+        it('should store CacheEntry with status and headers on miss', async () => {
             const responseBody = JSON.stringify({ choices: [{ message: { content: 'fresh' } }] });
             mockRedisService.get.mockResolvedValue(null);
             mockFetch.mockResolvedValue(new Response(responseBody, {
                 status: 200,
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-request-id': 'fresh-req-1' },
             }));
 
             const result = await cachedFetch(
@@ -97,11 +122,14 @@ describe('Cache Middleware', () => {
 
             expect(result.cacheHit).toBe(false);
             expect(mockFetch).toHaveBeenCalled();
-            expect(mockRedisService.set).toHaveBeenCalledWith(
-                expect.stringContaining('fetch_cache:'),
-                responseBody,
-                3600,
-            );
+
+            // Verify the stored value is a CacheEntry JSON
+            const storedValue = mockRedisService.set.mock.calls[0]![1] as string;
+            const storedEntry = JSON.parse(storedValue);
+            expect(storedEntry.status).toBe(200);
+            expect(storedEntry.headers['content-type']).toBe('application/json');
+            expect(storedEntry.headers['x-request-id']).toBe('fresh-req-1');
+            expect(storedEntry.body).toBe(responseBody);
 
             const body = await result.response.text();
             expect(body).toBe(responseBody);
@@ -158,6 +186,11 @@ describe('Cache Middleware', () => {
                 expect.any(String),
                 7200,
             );
+
+            // Verify it's a CacheEntry
+            const storedValue = mockRedisService.set.mock.calls[0]![1] as string;
+            const storedEntry = JSON.parse(storedValue);
+            expect(storedEntry.body).toBe('{"ok":true}');
         });
 
         it('should produce deterministic cache keys for same URL and body', async () => {
@@ -199,9 +232,14 @@ describe('Cache Middleware', () => {
     });
 
     describe('cachedFetch - streaming', () => {
-        it('should return cached body as stream on hit', async () => {
+        it('should return cached body as stream on hit with stored headers', async () => {
             const cachedBody = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
-            mockRedisService.get.mockResolvedValue(cachedBody);
+            const cacheEntry = JSON.stringify({
+                status: 200,
+                headers: { 'content-type': 'text/event-stream', 'x-request-id': 'cached-stream-1' },
+                body: cachedBody,
+            });
+            mockRedisService.get.mockResolvedValue(cacheEntry);
 
             const result = await cachedFetch(
                 'https://api.example.com/v1/chat/completions',
@@ -211,6 +249,9 @@ describe('Cache Middleware', () => {
 
             expect(result.cacheHit).toBe(true);
             expect(mockFetch).not.toHaveBeenCalled();
+            expect(result.response.status).toBe(200);
+            expect(result.response.headers.get('x-request-id')).toBe('cached-stream-1');
+            expect(result.response.headers.get('Cache-Control')).toBe('no-cache');
 
             // Read the stream
             const reader = result.response.body!.getReader();
@@ -224,7 +265,7 @@ describe('Cache Middleware', () => {
             expect(text).toBe(cachedBody);
         });
 
-        it('should fetch and tee stream on miss', async () => {
+        it('should fetch and tee stream on miss, storing CacheEntry', async () => {
             const streamBody = 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n';
             const encoder = new TextEncoder();
             const responseStream = new ReadableStream({
@@ -237,7 +278,7 @@ describe('Cache Middleware', () => {
             mockRedisService.get.mockResolvedValue(null);
             mockFetch.mockResolvedValue(new Response(responseStream, {
                 status: 200,
-                headers: { 'Content-Type': 'text/event-stream' },
+                headers: { 'Content-Type': 'text/event-stream', 'x-request-id': 'stream-miss-1' },
             }));
 
             const result = await cachedFetch(
@@ -263,6 +304,13 @@ describe('Cache Middleware', () => {
             // Wait a tick for background cache write
             await new Promise(resolve => setTimeout(resolve, 50));
             expect(mockRedisService.set).toHaveBeenCalled();
+
+            // Verify the stored value is a CacheEntry
+            const storedValue = mockRedisService.set.mock.calls[0]![1] as string;
+            const storedEntry = JSON.parse(storedValue);
+            expect(storedEntry.status).toBe(200);
+            expect(storedEntry.headers['content-type']).toBe('text/event-stream');
+            expect(storedEntry.body).toBe(streamBody);
         });
     });
 
