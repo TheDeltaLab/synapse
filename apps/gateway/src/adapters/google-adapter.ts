@@ -1,9 +1,26 @@
-import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage } from './types.js';
+import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage, RouteMatch } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+const STATIC_PATHS = new Set([
+    '/v1beta/openai/chat/completions',
+    '/v1beta/openai/embeddings',
+    '/v1beta/openai/completions',
+    '/v1beta/openai/responses',
+]);
+
+// Matches /v1beta/models/<model>:<action> where action is one of the allowed Gemini actions
+const DYNAMIC_PATH_PATTERN = /^\/v1beta\/models\/[^/]+:(generateContent|streamGenerateContent|embedContent)$/;
+
 export class GoogleAdapter implements ProviderAdapter {
     readonly style = 'google';
+
+    matchRoute(method: string, path: string): RouteMatch | null {
+        if (method !== 'POST') return null;
+        if (STATIC_PATHS.has(path)) return { cacheable: true };
+        if (DYNAMIC_PATH_PATTERN.test(path)) return { cacheable: true };
+        return null;
+    }
 
     parseRequest(requestBody: string): ParsedRequest {
         try {

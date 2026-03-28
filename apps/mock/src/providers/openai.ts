@@ -14,8 +14,28 @@ const MOCK_MODELS = [
 
 export const openaiApp = new Hono();
 
-// Health check
+// Health check (no auth required)
 openaiApp.get('/health', c => c.json({ status: 'ok', provider: 'openai-mock' }));
+
+// Auth middleware: require non-empty Bearer token
+openaiApp.use('/*', async (c, next) => {
+    const auth = c.req.header('Authorization') ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token) {
+        return c.json(
+            {
+                error: {
+                    message: 'You didn\'t provide an API key.',
+                    type: 'invalid_request_error',
+                    param: null,
+                    code: 'invalid_api_key',
+                },
+            },
+            401,
+        );
+    }
+    await next();
+});
 
 // List models
 openaiApp.get('/v1/models', (c) => {

@@ -8,13 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useEmbeddings } from '@/hooks/use-embeddings';
@@ -81,20 +74,17 @@ export function EmbeddingInterface() {
                                 </p>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label>Encoding Format</Label>
-                                <Select
-                                    value={settings.encodingFormat}
-                                    onValueChange={value => updateSettings({ encodingFormat: value as 'float' | 'base64' })}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="float">float</SelectItem>
-                                        <SelectItem value="base64">base64</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <Label>Cache</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Use cached responses when available
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={settings.cacheEnabled}
+                                    onCheckedChange={cacheEnabled => updateSettings({ cacheEnabled })}
+                                />
                             </div>
 
                             <div className="flex items-center justify-between">
@@ -185,15 +175,15 @@ export function EmbeddingInterface() {
                                         <CardTitle className="text-sm font-medium text-muted-foreground">Model</CardTitle>
                                     </CardHeader>
                                     <CardContent>
-                                        <p className="text-sm font-mono">{result.model}</p>
+                                        <p className="text-sm font-mono">{settings.modelSelection.model}</p>
                                     </CardContent>
                                 </Card>
                                 <Card>
                                     <CardHeader className="pb-2">
-                                        <CardTitle className="text-sm font-medium text-muted-foreground">Prompt Tokens</CardTitle>
+                                        <CardTitle className="text-sm font-medium text-muted-foreground">Tokens</CardTitle>
                                     </CardHeader>
                                     <CardContent>
-                                        <p className="text-2xl font-bold">{result.usage.prompt_tokens.toLocaleString()}</p>
+                                        <p className="text-2xl font-bold">{result.usage.tokens.toLocaleString()}</p>
                                     </CardContent>
                                 </Card>
                                 <Card>
@@ -202,9 +192,7 @@ export function EmbeddingInterface() {
                                     </CardHeader>
                                     <CardContent>
                                         <p className="text-2xl font-bold">
-                                            {result.data[0]?.embedding
-                                                ? result.data[0].embedding.length.toLocaleString()
-                                                : '-'}
+                                            {result.embedding.length.toLocaleString()}
                                         </p>
                                     </CardContent>
                                 </Card>
@@ -221,54 +209,34 @@ export function EmbeddingInterface() {
                             </div>
 
                             {/* Vector Preview */}
-                            {result.data.map((item, idx) => {
-                                const embedding = item.embedding;
-                                const isArray = Array.isArray(embedding);
-                                const previewValues = isArray ? embedding.slice(0, VECTOR_PREVIEW_COUNT) : [];
-                                const remaining = isArray ? embedding.length - VECTOR_PREVIEW_COUNT : 0;
-
-                                return (
-                                    <Card key={idx}>
-                                        <CardHeader className="pb-2">
-                                            <CardTitle className="text-sm font-medium">
-                                                Embedding Vector
-                                                {result.data.length > 1 && ` #${item.index}`}
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent>
-                                            {isArray
-                                                ? (
-                                                        <div className="rounded-md bg-muted p-3">
-                                                            <code className="text-xs font-mono break-all">
-                                                                [
-                                                                {previewValues.map((v, i) => (
-                                                                    <span key={i}>
-                                                                        {i > 0 && ', '}
-                                                                        <span className="text-blue-600 dark:text-blue-400">
-                                                                            {v.toFixed(8)}
-                                                                        </span>
-                                                                    </span>
-                                                                ))}
-                                                                {remaining > 0 && (
-                                                                    <span className="text-muted-foreground">
-                                                                        {`, ...${remaining.toLocaleString()} more`}
-                                                                    </span>
-                                                                )}
-                                                                ]
-                                                            </code>
-                                                        </div>
-                                                    )
-                                                : (
-                                                        <div className="rounded-md bg-muted p-3">
-                                                            <code className="text-xs font-mono break-all text-muted-foreground">
-                                                                {`Base64 encoded string (${typeof embedding === 'string' ? embedding.length : 0} chars)`}
-                                                            </code>
-                                                        </div>
-                                                    )}
-                                        </CardContent>
-                                    </Card>
-                                );
-                            })}
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium">
+                                        Embedding Vector
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="rounded-md bg-muted p-3">
+                                        <code className="text-xs font-mono break-all">
+                                            [
+                                            {result.embedding.slice(0, VECTOR_PREVIEW_COUNT).map((v, i) => (
+                                                <span key={i}>
+                                                    {i > 0 && ', '}
+                                                    <span className="text-blue-600 dark:text-blue-400">
+                                                        {v.toFixed(8)}
+                                                    </span>
+                                                </span>
+                                            ))}
+                                            {result.embedding.length > VECTOR_PREVIEW_COUNT && (
+                                                <span className="text-muted-foreground">
+                                                    {`, ...${(result.embedding.length - VECTOR_PREVIEW_COUNT).toLocaleString()} more`}
+                                                </span>
+                                            )}
+                                            ]
+                                        </code>
+                                    </div>
+                                </CardContent>
+                            </Card>
                         </div>
                     )}
 

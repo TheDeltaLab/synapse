@@ -6,6 +6,8 @@ import { MOCK_RESPONSE_TEXT } from '../utils/constants.js';
 type Json = Record<string, any>;
 
 describe('Anthropic Mock Provider', () => {
+    const authHeaders = { 'x-api-key': 'test-key' };
+
     describe('GET /health', () => {
         it('should return ok status', async () => {
             const res = await anthropicApp.request('/health');
@@ -15,11 +17,38 @@ describe('Anthropic Mock Provider', () => {
         });
     });
 
+    describe('Auth', () => {
+        it('should return 401 without x-api-key header', async () => {
+            const res = await anthropicApp.request('/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: [{ role: 'user', content: 'hello' }],
+                }),
+            });
+            expect(res.status).toBe(401);
+            const body = (await res.json()) as Json;
+            expect(body.type).toBe('error');
+            expect(body.error.type).toBe('authentication_error');
+        });
+
+        it('should return 401 with empty x-api-key', async () => {
+            const res = await anthropicApp.request('/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': '  ' },
+                body: JSON.stringify({
+                    messages: [{ role: 'user', content: 'hello' }],
+                }),
+            });
+            expect(res.status).toBe(401);
+        });
+    });
+
     describe('POST /v1/messages', () => {
         it('should return mock response in Anthropic format', async () => {
             const res = await anthropicApp.request('/v1/messages', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'claude-sonnet-4-20250514',
                     max_tokens: 1024,
@@ -44,7 +73,7 @@ describe('Anthropic Mock Provider', () => {
         it('should use default model when not specified', async () => {
             const res = await anthropicApp.request('/v1/messages', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     messages: [{ role: 'user', content: 'hello' }],
                 }),
@@ -57,7 +86,7 @@ describe('Anthropic Mock Provider', () => {
         it('should return SSE stream when stream=true', async () => {
             const res = await anthropicApp.request('/v1/messages', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'claude-sonnet-4-20250514',
                     max_tokens: 1024,
@@ -90,7 +119,9 @@ describe('Anthropic Mock Provider', () => {
 
     describe('Not Found', () => {
         it('should return 404 with Anthropic error shape', async () => {
-            const res = await anthropicApp.request('/v1/unknown');
+            const res = await anthropicApp.request('/v1/unknown', {
+                headers: authHeaders,
+            });
             expect(res.status).toBe(404);
             const body = (await res.json()) as Json;
             expect(body.type).toBe('error');

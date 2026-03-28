@@ -6,23 +6,15 @@ import type { ModelSelection } from '@/components/playground/model-selector';
 import { gateway } from '@/lib/gateway';
 
 export interface EmbeddingResult {
-    object: string;
-    data: Array<{
-        object: string;
-        index: number;
-        embedding: number[] | string;
-    }>;
-    model: string;
+    embedding: number[];
     usage: {
-        prompt_tokens: number;
-        total_tokens: number;
+        tokens: number;
     };
 }
 
 export interface EmbeddingSettings {
     modelSelection: ModelSelection;
     dimensions: number | null;
-    encodingFormat: 'float' | 'base64';
     cacheEnabled: boolean;
 }
 
@@ -58,7 +50,6 @@ export function useEmbeddings() {
     const [settings, setSettings] = useState<EmbeddingSettings>({
         modelSelection: { provider: '', model: '' },
         dimensions: null,
-        encodingFormat: 'float',
         cacheEnabled: true,
     });
 
@@ -119,26 +110,28 @@ export function useEmbeddings() {
         const startTime = performance.now();
 
         try {
-            const body: Record<string, unknown> = {
-                model: settings.modelSelection.model,
-                input: input.trim(),
-                encoding_format: settings.encodingFormat,
-            };
+            const response = await fetch('/api/embeddings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    input: input.trim(),
+                    model: settings.modelSelection.model,
+                    provider: settings.modelSelection.provider,
+                    dimensions: settings.dimensions,
+                    apiKey,
+                    cacheEnabled: settings.cacheEnabled,
+                }),
+            });
 
-            if (settings.dimensions !== null) {
-                body.dimensions = settings.dimensions;
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || errorData.message || 'Failed to generate embedding');
             }
 
-            const data = await gateway.createEmbedding(
-                apiKey,
-                body,
-                settings.modelSelection.provider,
-                { cacheEnabled: settings.cacheEnabled },
-            );
-
+            const data: EmbeddingResult = await response.json();
             const elapsed = Math.round(performance.now() - startTime);
             setLatency(elapsed);
-            setResult(data as EmbeddingResult);
+            setResult(data);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to generate embedding';
             setError(errorMessage);

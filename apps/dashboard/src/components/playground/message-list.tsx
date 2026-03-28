@@ -10,6 +10,13 @@ interface MessageListProps {
     isLoading: boolean;
 }
 
+function getTextContent(message: Message): string {
+    return message.parts
+        .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+        .map(part => part.text)
+        .join('');
+}
+
 export function MessageList({ messages, isLoading }: MessageListProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -37,39 +44,42 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
 
     return (
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map(message => (
-                <div
-                    key={message.id}
-                    className={cn(
-                        'flex gap-3',
-                        message.role === 'user' ? 'justify-end' : 'justify-start',
-                    )}
-                >
-                    {message.role === 'assistant' && (
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                            <Bot className="h-4 w-4" />
-                        </div>
-                    )}
+            {messages.map((message) => {
+                const textContent = getTextContent(message);
+                return (
                     <div
+                        key={message.id}
                         className={cn(
-                            'max-w-[70%] rounded-lg px-4 py-2',
-                            message.role === 'user'
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted',
+                            'flex gap-3',
+                            message.role === 'user' ? 'justify-end' : 'justify-start',
                         )}
                     >
-                        <p className="whitespace-pre-wrap text-sm">{message.content}</p>
-                        {message.role === 'assistant' && message.content === '' && isLoading && (
-                            <span className="inline-block animate-pulse">▊</span>
+                        {message.role === 'assistant' && (
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                                <Bot className="h-4 w-4" />
+                            </div>
+                        )}
+                        <div
+                            className={cn(
+                                'max-w-[70%] rounded-lg px-4 py-2',
+                                message.role === 'user'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-muted',
+                            )}
+                        >
+                            <p className="whitespace-pre-wrap text-sm">{textContent}</p>
+                            {message.role === 'assistant' && textContent === '' && isLoading && (
+                                <span className="inline-block animate-pulse">▊</span>
+                            )}
+                        </div>
+                        {message.role === 'user' && (
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary">
+                                <User className="h-4 w-4" />
+                            </div>
                         )}
                     </div>
-                    {message.role === 'user' && (
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary">
-                            <User className="h-4 w-4" />
-                        </div>
-                    )}
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 }

@@ -169,6 +169,49 @@ describe('GoogleAdapter', () => {
         });
     });
 
+    describe('matchRoute', () => {
+        it('should match POST /v1beta/openai/chat/completions', () => {
+            const result = adapter.matchRoute('POST', '/v1beta/openai/chat/completions');
+            expect(result).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1beta/openai/embeddings', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/openai/embeddings')).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1beta/openai/completions', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/openai/completions')).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1beta/openai/responses', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/openai/responses')).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1beta/models/<model>:generateContent', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/models/gemini-pro:generateContent')).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1beta/models/<model>:streamGenerateContent', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/models/gemini-1.5-flash:streamGenerateContent')).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1beta/models/<model>:embedContent', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/models/embedding-001:embedContent')).toEqual({ cacheable: true });
+        });
+
+        it('should reject GET method', () => {
+            expect(adapter.matchRoute('GET', '/v1beta/openai/chat/completions')).toBeNull();
+        });
+
+        it('should reject unknown path', () => {
+            expect(adapter.matchRoute('POST', '/v1/chat/completions')).toBeNull();
+        });
+
+        it('should reject unknown Gemini action', () => {
+            expect(adapter.matchRoute('POST', '/v1beta/models/gemini-pro:unknownAction')).toBeNull();
+        });
+    });
+
     describe('parseEmbeddingResponse', () => {
         it('should always return null tokens', () => {
             const body = JSON.stringify({

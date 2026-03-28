@@ -27,8 +27,13 @@ export interface ParsedEmbeddingResponse {
     tokens: number | null;
 }
 
+export interface RouteMatch {
+    cacheable: boolean;
+}
+
 export interface ProviderAdapter {
     readonly style: string;
+    matchRoute(method: string, path: string): RouteMatch | null;
     parseRequest(requestBody: string): ParsedRequest;
     parseResponse(responseBody: string): ParsedResponse;
     parseStreamingResponse(ssePayload: string): ParsedResponse;

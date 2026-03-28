@@ -6,6 +6,8 @@ import { MOCK_RESPONSE_TEXT } from '../utils/constants.js';
 type Json = Record<string, any>;
 
 describe('OpenRouter Mock Provider', () => {
+    const authHeaders = { Authorization: 'Bearer test-key' };
+
     describe('GET /health', () => {
         it('should return ok status', async () => {
             const res = await openrouterApp.request('/health');
@@ -15,9 +17,21 @@ describe('OpenRouter Mock Provider', () => {
         });
     });
 
+    describe('Auth', () => {
+        it('should return 401 without Authorization header', async () => {
+            const res = await openrouterApp.request('/v1/models');
+            expect(res.status).toBe(401);
+            const body = (await res.json()) as Json;
+            expect(body.error.type).toBe('invalid_request_error');
+            expect(body.error.code).toBe('invalid_api_key');
+        });
+    });
+
     describe('GET /v1/models', () => {
         it('should return a list of models', async () => {
-            const res = await openrouterApp.request('/v1/models');
+            const res = await openrouterApp.request('/v1/models', {
+                headers: authHeaders,
+            });
             expect(res.status).toBe(200);
             const body = (await res.json()) as Json;
             expect(body.object).toBe('list');
@@ -36,7 +50,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should return mock response in OpenAI format', async () => {
             const res = await openrouterApp.request('/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'gpt-5-mini',
                     messages: [{ role: 'user', content: 'hello' }],
@@ -60,7 +74,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should use default model when not specified', async () => {
             const res = await openrouterApp.request('/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     messages: [{ role: 'user', content: 'hello' }],
                 }),
@@ -73,7 +87,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should return SSE stream when stream=true', async () => {
             const res = await openrouterApp.request('/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'gpt-5-mini',
                     messages: [{ role: 'user', content: 'hello' }],
@@ -104,7 +118,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should return embedding for a single string input', async () => {
             const res = await openrouterApp.request('/v1/embeddings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'text-embedding-3-small',
                     input: 'hello world',
@@ -125,7 +139,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should return embeddings for array input', async () => {
             const res = await openrouterApp.request('/v1/embeddings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'text-embedding-3-small',
                     input: ['hello', 'world', 'test'],
@@ -142,7 +156,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should respect custom dimensions parameter', async () => {
             const res = await openrouterApp.request('/v1/embeddings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'text-embedding-3-small',
                     input: 'hello',
@@ -157,7 +171,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should use model default dimension for text-embedding-3-large', async () => {
             const res = await openrouterApp.request('/v1/embeddings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'text-embedding-3-large',
                     input: 'hello',
@@ -171,7 +185,7 @@ describe('OpenRouter Mock Provider', () => {
         it('should include usage information', async () => {
             const res = await openrouterApp.request('/v1/embeddings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                     model: 'text-embedding-3-small',
                     input: 'hello',
@@ -187,7 +201,9 @@ describe('OpenRouter Mock Provider', () => {
 
     describe('Not Found', () => {
         it('should return 404 with OpenAI error shape', async () => {
-            const res = await openrouterApp.request('/v1/unknown');
+            const res = await openrouterApp.request('/v1/unknown', {
+                headers: authHeaders,
+            });
             expect(res.status).toBe(404);
             const body = (await res.json()) as Json;
             expect(body.error).toBeDefined();

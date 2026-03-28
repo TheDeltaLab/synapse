@@ -36,6 +36,7 @@ servers.push(
         console.log(`Mock Google     running on http://localhost:${GOOGLE_PORT}`);
         console.log(`  GET  /health`);
         console.log(`  POST /v1beta/models/{model}:generateContent`);
+        console.log(`  POST /v1beta/models/{model}:streamGenerateContent`);
         console.log(`  POST /v1beta/models/{model}:embedContent`);
         console.log(`  POST /v1beta/models/{model}:batchEmbedContents`);
     }),

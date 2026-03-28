@@ -13,8 +13,28 @@ const MOCK_MODELS = [
 
 export const openrouterApp = new Hono();
 
-// Health check
+// Health check (no auth required)
 openrouterApp.get('/health', c => c.json({ status: 'ok', provider: 'openrouter-mock' }));
+
+// Auth middleware: require non-empty Bearer token
+openrouterApp.use('/*', async (c, next) => {
+    const auth = c.req.header('Authorization') ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token) {
+        return c.json(
+            {
+                error: {
+                    message: 'You didn\'t provide an API key.',
+                    type: 'invalid_request_error',
+                    param: null,
+                    code: 'invalid_api_key',
+                },
+            },
+            401,
+        );
+    }
+    await next();
+});
 
 // List models
 openrouterApp.get('/v1/models', (c) => {

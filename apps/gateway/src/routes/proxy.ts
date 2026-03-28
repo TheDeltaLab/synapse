@@ -167,6 +167,16 @@ export async function handleProxy(c: Context): Promise<Response> {
 
         const upstreamUrl = endpoint.url + queryString;
 
+        // Resolve adapter and validate route before making upstream request
+        const adapter = getProviderAdapter(endpoint.providerId, responseStyle || undefined);
+        const routeMatch = adapter.matchRoute(method, requestPath);
+        if (!routeMatch) {
+            return c.json({
+                error: 'Bad Request',
+                message: `Path ${method} ${requestPath} is not supported for provider ${endpoint.providerId}`,
+            }, HTTP_STATUS.BAD_REQUEST);
+        }
+
         // Build fetch options — forward client headers, overlay auth
         const fetchInit: RequestInit = {
             method,
@@ -185,11 +195,8 @@ export async function handleProxy(c: Context): Promise<Response> {
         const cacheHeader = c.req.header('x-synapse-cache');
         const cacheDisabled = cacheHeader === 'false';
 
-        // Only cache POST requests when Redis is available and cache is not disabled
-        // TODO: This caches all POST requests indiscriminately. Non-idempotent endpoints
-        // (e.g. /v1/files, /v1/fine_tuning/jobs) should not be cached. Consider restricting
-        // caching to specific safe paths like /v1/chat/completions and /v1/embeddings.
-        if (method === 'POST' && redisService.available && !cacheDisabled) {
+        // Only cache cacheable routes when Redis is available and cache is not disabled
+        if (routeMatch.cacheable && redisService.available && !cacheDisabled) {
             const result = await cachedFetch(
                 upstreamUrl,
                 fetchInit,
@@ -203,7 +210,6 @@ export async function handleProxy(c: Context): Promise<Response> {
         }
 
         // Use adapter to classify request type via payload structure
-        const adapter = getProviderAdapter(endpoint.providerId, responseStyle || undefined);
         const parsedReq = rawBody ? adapter.parseRequest(rawBody) : { type: 'unknown' as const };
 
         if (parsedReq.type === 'chat') {

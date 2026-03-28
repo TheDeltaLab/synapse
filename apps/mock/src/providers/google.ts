@@ -4,8 +4,28 @@ import { generateRandomVector, getDimension } from '../utils/vectors.js';
 
 export const googleApp = new Hono();
 
-// Health check
+// Health check (no auth required)
 googleApp.get('/health', c => c.json({ status: 'ok', provider: 'google-mock' }));
+
+// Auth middleware: require non-empty key query param or Bearer token
+googleApp.use('/*', async (c, next) => {
+    const queryKey = (c.req.query('key') ?? '').trim();
+    const auth = c.req.header('Authorization') ?? '';
+    const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!queryKey && !bearerToken) {
+        return c.json(
+            {
+                error: {
+                    code: 401,
+                    message: 'API key not valid. Please pass a valid API key.',
+                    status: 'UNAUTHENTICATED',
+                },
+            },
+            401,
+        );
+    }
+    await next();
+});
 
 /**
  * Parse `{model}:{action}` from the wildcard path segment.
@@ -79,6 +99,58 @@ googleApp.post('/v1beta/models/*', async (c) => {
             });
         }
 
+        case 'streamGenerateContent': {
+            const body = await c.req.json();
+            const contents: Array<{ parts?: Array<{ text?: string }> }> = body.contents ?? [];
+            const promptTokenCount = contents.reduce(
+                (sum: number, content: { parts?: Array<{ text?: string }> }) =>
+                    (content.parts ?? []).reduce(
+                        (s: number, part: { text?: string }) => s + Math.ceil(String(part.text ?? '').length / 4),
+                        sum,
+                    ),
+                0,
+            );
+            const candidateTokenCount = Math.ceil(MOCK_RESPONSE_TEXT.length / 4);
+
+            const encoder = new TextEncoder();
+            const { readable, writable } = new TransformStream();
+            const writer = writable.getWriter();
+
+            (async () => {
+                try {
+                    // Single chunk with full response
+                    await writer.write(encoder.encode(`data: ${JSON.stringify({
+                        candidates: [
+                            {
+                                content: {
+                                    parts: [{ text: MOCK_RESPONSE_TEXT }],
+                                    role: 'model',
+                                },
+                                finishReason: 'STOP',
+                                index: 0,
+                            },
+                        ],
+                        usageMetadata: {
+                            promptTokenCount,
+                            candidatesTokenCount: candidateTokenCount,
+                            totalTokenCount: promptTokenCount + candidateTokenCount,
+                        },
+                        modelVersion: model,
+                    })}\n\n`));
+                } finally {
+                    await writer.close();
+                }
+            })();
+
+            return new Response(readable, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
+        }
+
         case 'embedContent': {
             const body = await c.req.json();
             const outputDimensionality: number | undefined = body.outputDimensionality;
@@ -109,7 +181,7 @@ googleApp.post('/v1beta/models/*', async (c) => {
                 {
                     error: {
                         code: 400,
-                        message: `Unknown action: ${action}. Supported actions: generateContent, embedContent, batchEmbedContents`,
+                        message: `Unknown action: ${action}. Supported actions: generateContent, streamGenerateContent, embedContent, batchEmbedContents`,
                         status: 'INVALID_ARGUMENT',
                     },
                 },

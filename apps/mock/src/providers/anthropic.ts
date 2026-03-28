@@ -3,8 +3,26 @@ import { MOCK_RESPONSE_TEXT } from '../utils/constants.js';
 
 export const anthropicApp = new Hono();
 
-// Health check
+// Health check (no auth required)
 anthropicApp.get('/health', c => c.json({ status: 'ok', provider: 'anthropic-mock' }));
+
+// Auth middleware: require non-empty x-api-key header
+anthropicApp.use('/*', async (c, next) => {
+    const apiKey = (c.req.header('x-api-key') ?? '').trim();
+    if (!apiKey) {
+        return c.json(
+            {
+                type: 'error',
+                error: {
+                    type: 'authentication_error',
+                    message: 'x-api-key header is required.',
+                },
+            },
+            401,
+        );
+    }
+    await next();
+});
 
 // Messages
 anthropicApp.post('/v1/messages', async (c) => {

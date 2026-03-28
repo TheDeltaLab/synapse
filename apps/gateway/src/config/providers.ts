@@ -127,6 +127,25 @@ export type ProviderName = (typeof providers)[number]['id'];
 
 export const deployments = [
     {
+        id: 'anthropic:claude-sonnet-4-6:chat',
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-6',
+        task: 'chat',
+        isDefault: true,
+    },
+    {
+        id: 'anthropic:claude-opus-4-6:chat',
+        providerId: 'anthropic',
+        modelId: 'claude-opus-4-6',
+        task: 'chat',
+    },
+    {
+        id: 'anthropic:claude-haiku-4-5-20251001:chat',
+        providerId: 'anthropic',
+        modelId: 'claude-haiku-4-5-20251001',
+        task: 'chat',
+    },
+    {
         id: 'google:gemini-2.0-flash-exp:chat',
         providerId: 'google',
         modelId: 'gemini-2.0-flash-exp',

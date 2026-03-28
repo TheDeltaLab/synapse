@@ -41,7 +41,14 @@ vi.mock('@synapse/dal', () => ({
 
 // Mock adapters
 vi.mock('../../adapters/index.js', () => ({
-    getProviderAdapter: vi.fn(() => ({
+    getProviderAdapter: vi.fn((_providerId: string) => ({
+        matchRoute: vi.fn((method: string, path: string) => {
+            // Simulate OpenAI adapter allowlist by default
+            if (method !== 'POST') return null;
+            const openaiPaths = new Set(['/v1/chat/completions', '/v1/embeddings', '/v1/completions', '/v1/responses']);
+            if (openaiPaths.has(path)) return { cacheable: true };
+            return null;
+        }),
         parseRequest: vi.fn((body: string) => {
             try {
                 const data = JSON.parse(body);
@@ -258,60 +265,6 @@ describe('handleProxy', () => {
         });
     });
 
-    describe('GET /v1/models', () => {
-        it('defaults to OpenAI when no provider and no model', async () => {
-            const { providerRegistry } = await import('../../services/provider-registry.js');
-
-            mockFetch.mockImplementation(async () => {
-                return new Response(JSON.stringify({
-                    object: 'list',
-                    data: [{ id: 'gpt-4o', object: 'model' }],
-                }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' },
-                });
-            });
-
-            const res = await app.request('/v1/models', { method: 'GET' });
-
-            expect(res.status).toBe(200);
-            // No model in GET body, so resolveEndpoint is called without model
-            expect(providerRegistry.resolveEndpoint).toHaveBeenCalledWith(
-                '/v1/models',
-                undefined,
-                undefined,
-                undefined,
-            );
-        });
-
-        it('uses specified provider for GET requests', async () => {
-            const { providerRegistry } = await import('../../services/provider-registry.js');
-
-            mockFetch.mockImplementation(async () => {
-                return new Response(JSON.stringify({
-                    object: 'list',
-                    data: [{ id: 'deepseek-chat', object: 'model' }],
-                }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' },
-                });
-            });
-
-            const res = await app.request('/v1/models', {
-                method: 'GET',
-                headers: { 'x-synapse-provider': 'deepseek' },
-            });
-
-            expect(res.status).toBe(200);
-            expect(providerRegistry.resolveEndpoint).toHaveBeenCalledWith(
-                '/v1/models',
-                undefined,
-                undefined,
-                'deepseek',
-            );
-        });
-    });
-
     describe('streaming', () => {
         it('forwards streaming response with tee for logging', async () => {
             const encoder = new TextEncoder();
@@ -412,16 +365,23 @@ describe('handleProxy', () => {
     describe('query string forwarding', () => {
         it('forwards query parameters to upstream', async () => {
             mockFetch.mockImplementation(async () => {
-                return new Response(JSON.stringify({ object: 'list', data: [] }), {
+                return new Response(JSON.stringify({ ok: true }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' },
                 });
             });
 
-            await app.request('/v1/models?limit=10&order=asc', { method: 'GET' });
+            await app.request('/v1/chat/completions?stream=true', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
 
             expect(mockFetch).toHaveBeenCalledWith(
-                'https://api.example.com/v1/models?limit=10&order=asc',
+                'https://api.example.com/v1/chat/completions?stream=true',
                 expect.any(Object),
             );
         });
@@ -436,11 +396,80 @@ describe('handleProxy', () => {
                 });
             });
 
-            const res = await app.request('/v1/models', { method: 'GET' });
+            // Use an allowed path that returns 'unknown' request type
+            const res = await app.request('/v1/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: 'hello' }),
+            });
 
             expect(res.status).toBe(200);
             const json = await parseJson(res);
             expect(json.ok).toBe(true);
+        });
+    });
+
+    describe('route validation', () => {
+        it('returns 400 for unknown path', async () => {
+            const res = await app.request('/v1/unknown-endpoint', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'gpt-4o' }),
+            });
+
+            expect(res.status).toBe(400);
+            const json = await parseJson(res);
+            expect(json.error).toBe('Bad Request');
+            expect(json.message).toContain('/v1/unknown-endpoint');
+            expect(json.message).toContain('not supported');
+            // Should not reach upstream
+            expect(mockFetch).not.toHaveBeenCalled();
+        });
+
+        it('returns 400 for GET on POST-only paths', async () => {
+            const res = await app.request('/v1/chat/completions', { method: 'GET' });
+
+            expect(res.status).toBe(400);
+            const json = await parseJson(res);
+            expect(json.error).toBe('Bad Request');
+            expect(json.message).toContain('GET');
+            expect(mockFetch).not.toHaveBeenCalled();
+        });
+
+        it('returns 400 for path-provider mismatch', async () => {
+            const { getProviderAdapter } = await import('../../adapters/index.js');
+
+            // Override to simulate Anthropic adapter that only allows /v1/messages
+            vi.mocked(getProviderAdapter).mockReturnValueOnce({
+                style: 'anthropic',
+                matchRoute: (method: string, path: string) => {
+                    if (method !== 'POST') return null;
+                    if (path === '/v1/messages') return { cacheable: true };
+                    return null;
+                },
+                parseRequest: vi.fn(() => ({ type: 'unknown' as const })),
+                parseResponse: vi.fn(() => ({ content: null, usage: null })),
+                parseStreamingResponse: vi.fn(() => ({ content: null, usage: null })),
+                parseEmbeddingResponse: vi.fn(() => ({ tokens: null })),
+            });
+
+            const res = await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-synapse-provider': 'anthropic',
+                },
+                body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            expect(res.status).toBe(400);
+            const json = await parseJson(res);
+            expect(json.message).toContain('/v1/chat/completions');
+            expect(json.message).toContain('not supported');
+            expect(mockFetch).not.toHaveBeenCalled();
         });
     });
 

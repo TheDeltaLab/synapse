@@ -1,9 +1,22 @@
-import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage } from './types.js';
+import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage, RouteMatch } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+const ALLOWED_PATHS = new Set([
+    '/v1/chat/completions',
+    '/v1/embeddings',
+    '/v1/completions',
+    '/v1/responses',
+]);
+
 export class OpenAIAdapter implements ProviderAdapter {
     readonly style = 'openai';
+
+    matchRoute(method: string, path: string): RouteMatch | null {
+        if (method !== 'POST') return null;
+        if (!ALLOWED_PATHS.has(path)) return null;
+        return { cacheable: true };
+    }
 
     parseRequest(requestBody: string): ParsedRequest {
         try {
