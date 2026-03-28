@@ -559,6 +559,90 @@ describe('handleProxy', () => {
         });
     });
 
+    describe('x-synapse-cache header', () => {
+        it('bypasses cache when x-synapse-cache is false', async () => {
+            const { redisService } = await import('../../services/redis-service.js');
+            const { cachedFetch } = await import('../../middleware/cache.js');
+
+            // Enable Redis for this test
+            Object.defineProperty(redisService, 'available', { value: true, writable: true, configurable: true });
+
+            await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-synapse-cache': 'false',
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            // Should call fetch directly, not cachedFetch
+            expect(mockFetch).toHaveBeenCalled();
+            expect(cachedFetch).not.toHaveBeenCalled();
+
+            // Restore
+            Object.defineProperty(redisService, 'available', { value: false, writable: true, configurable: true });
+        });
+
+        it('uses cache when x-synapse-cache header is absent and Redis is available', async () => {
+            const { redisService } = await import('../../services/redis-service.js');
+            const { cachedFetch } = await import('../../middleware/cache.js');
+
+            Object.defineProperty(redisService, 'available', { value: true, writable: true, configurable: true });
+
+            vi.mocked(cachedFetch).mockResolvedValueOnce({
+                response: new Response(JSON.stringify({
+                    id: 'chatcmpl-123',
+                    choices: [{ message: { role: 'assistant', content: 'Cached!' } }],
+                    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+                }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+                cacheHit: true,
+                cacheTtl: 300,
+                cacheKey: 'test-cache-key',
+            });
+
+            await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            // Should use cachedFetch, not direct fetch
+            expect(cachedFetch).toHaveBeenCalled();
+            expect(mockFetch).not.toHaveBeenCalled();
+
+            Object.defineProperty(redisService, 'available', { value: false, writable: true, configurable: true });
+        });
+
+        it('does not leak x-synapse-cache header upstream', async () => {
+            await app.request('/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-synapse-cache': 'false',
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: 'Hi' }],
+                }),
+            });
+
+            const fetchCall = mockFetch.mock.calls[0]!;
+            const sentHeaders = fetchCall[1]!.headers as Record<string, string>;
+            const allKeys = Object.keys(sentHeaders).map(k => k.toLowerCase());
+            expect(allKeys.some(k => k.startsWith('x-synapse-'))).toBe(false);
+        });
+    });
+
     describe('buildUpstreamHeaders', () => {
         it('merges client headers with endpoint headers, endpoint wins', () => {
             const incoming = new Headers({

@@ -23,6 +23,7 @@ export interface EmbeddingSettings {
     modelSelection: ModelSelection;
     dimensions: number | null;
     encodingFormat: 'float' | 'base64';
+    cacheEnabled: boolean;
 }
 
 function isEmbeddingSelectionAvailable(providers: ProviderInfo[], selection: ModelSelection): boolean {
@@ -58,6 +59,7 @@ export function useEmbeddings() {
         modelSelection: { provider: '', model: '' },
         dimensions: null,
         encodingFormat: 'float',
+        cacheEnabled: true,
     });
 
     useEffect(() => {
@@ -131,6 +133,7 @@ export function useEmbeddings() {
                 apiKey,
                 body,
                 settings.modelSelection.provider,
+                { cacheEnabled: settings.cacheEnabled },
             );
 
             const elapsed = Math.round(performance.now() - startTime);

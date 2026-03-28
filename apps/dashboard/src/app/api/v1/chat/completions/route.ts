@@ -28,6 +28,11 @@ export async function POST(request: NextRequest) {
             headers['x-synapse-provider'] = providerHeader;
         }
 
+        const cacheHeader = request.headers.get('x-synapse-cache');
+        if (cacheHeader) {
+            headers['x-synapse-cache'] = cacheHeader;
+        }
+
         const response = await fetch(url, {
             method: 'POST',
             headers,

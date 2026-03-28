@@ -181,11 +181,15 @@ export async function handleProxy(c: Context): Promise<Response> {
         let cacheHit = false;
         let cacheTtl = 0;
 
-        // Only cache POST requests when Redis is available
+        // Per-request cache bypass via x-synapse-cache header
+        const cacheHeader = c.req.header('x-synapse-cache');
+        const cacheDisabled = cacheHeader === 'false';
+
+        // Only cache POST requests when Redis is available and cache is not disabled
         // TODO: This caches all POST requests indiscriminately. Non-idempotent endpoints
         // (e.g. /v1/files, /v1/fine_tuning/jobs) should not be cached. Consider restricting
         // caching to specific safe paths like /v1/chat/completions and /v1/embeddings.
-        if (method === 'POST' && redisService.available) {
+        if (method === 'POST' && redisService.available && !cacheDisabled) {
             const result = await cachedFetch(
                 upstreamUrl,
                 fetchInit,

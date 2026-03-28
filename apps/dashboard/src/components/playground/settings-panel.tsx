@@ -5,6 +5,7 @@ import { ModelSelector, type ModelSelection } from './model-selector';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import type { ChatSettings } from '@/hooks/use-chat';
 
 interface SettingsPanelProps {
@@ -64,6 +65,19 @@ export function SettingsPanel({ settings, onSettingsChange, onClear, hasMessages
                         min={100}
                         max={4096}
                         step={100}
+                    />
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                        <Label>Cache</Label>
+                        <p className="text-xs text-muted-foreground">
+                            Use cached responses when available
+                        </p>
+                    </div>
+                    <Switch
+                        checked={settings.cacheEnabled}
+                        onCheckedChange={cacheEnabled => onSettingsChange({ cacheEnabled })}
                     />
                 </div>
             </div>
