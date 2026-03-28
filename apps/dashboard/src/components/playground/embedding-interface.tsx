@@ -15,6 +15,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useEmbeddings } from '@/hooks/use-embeddings';
 
@@ -94,6 +95,19 @@ export function EmbeddingInterface() {
                                         <SelectItem value="base64">base64</SelectItem>
                                     </SelectContent>
                                 </Select>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <Label>Cache</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Use cached responses when available
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={settings.cacheEnabled}
+                                    onCheckedChange={cacheEnabled => updateSettings({ cacheEnabled })}
+                                />
                             </div>
                         </div>
                     </div>

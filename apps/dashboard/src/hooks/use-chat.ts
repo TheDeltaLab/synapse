@@ -16,6 +16,7 @@ export interface ChatSettings {
     modelSelection: ModelSelection;
     temperature: number;
     maxTokens: number;
+    cacheEnabled: boolean;
 }
 
 function isChatSelectionAvailable(providers: ProviderInfo[], selection: ModelSelection): boolean {
@@ -50,6 +51,7 @@ export function useChat() {
         modelSelection: { provider: '', model: '' },
         temperature: DEFAULT_TEMPERATURE,
         maxTokens: DEFAULT_MAX_TOKENS,
+        cacheEnabled: true,
     });
 
     useEffect(() => {
@@ -130,6 +132,7 @@ export function useChat() {
                 provider: settings.modelSelection.provider,
                 temperature: settings.temperature,
                 maxTokens: settings.maxTokens,
+                cacheEnabled: settings.cacheEnabled,
             });
 
             for await (const chunk of stream) {

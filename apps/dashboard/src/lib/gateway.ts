@@ -137,6 +137,7 @@ class GatewayClient {
             provider?: string;
             temperature?: number;
             maxTokens?: number;
+            cacheEnabled?: boolean;
         },
     ): AsyncGenerator<string, void, unknown> {
         const headers: Record<string, string> = {
@@ -147,6 +148,10 @@ class GatewayClient {
         // Add provider header if specified
         if (options.provider) {
             headers['x-synapse-provider'] = options.provider;
+        }
+
+        if (options.cacheEnabled === false) {
+            headers['x-synapse-cache'] = 'false';
         }
 
         const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
@@ -201,6 +206,7 @@ class GatewayClient {
         apiKey: string,
         body: Record<string, unknown>,
         provider?: string,
+        options?: { cacheEnabled?: boolean },
     ): Promise<unknown> {
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
@@ -209,6 +215,10 @@ class GatewayClient {
 
         if (provider) {
             headers['x-synapse-provider'] = provider;
+        }
+
+        if (options?.cacheEnabled === false) {
+            headers['x-synapse-cache'] = 'false';
         }
 
         const response = await fetch(`${this.baseUrl}/v1/embeddings`, {
