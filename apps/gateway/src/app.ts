@@ -4,8 +4,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { loggerMiddleware } from './middleware/logger.js';
 import { admin } from './routes/admin.js';
-import { handleChatCompletion } from './routes/v1/chat.js';
-import { handleEmbeddings } from './routes/v1/embeddings.js';
+import { handleProxy } from './routes/proxy.js';
 import { redisService } from './services/redis-service.js';
 
 const app = new Hono();
@@ -14,7 +13,7 @@ const app = new Hono();
 app.use('*', loggerMiddleware);
 app.use('*', cors({
     origin: '*',
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'x-synapse-provider', 'x-synapse-response-style'],
 }));
 
@@ -33,14 +32,8 @@ app.get('/health', (c) => {
 // Admin routes (no auth for now)
 app.route('/admin', admin);
 
-// API routes with authentication
-app.post('/v1/chat/completions', authMiddleware, handleChatCompletion);
-app.post('/v1/embeddings', authMiddleware, handleEmbeddings);
-
-// 404 handler
-app.notFound((c) => {
-    return c.json({ error: 'Not Found', message: 'Endpoint not found' }, 404);
-});
+// Transparent proxy: forward all other requests to upstream providers
+app.all('/*', authMiddleware, handleProxy);
 
 // Error handler
 app.onError(errorHandler);

@@ -1,14 +1,58 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
-import type {
-    LanguageModelV3Middleware,
-    LanguageModelV3StreamPart,
-} from '@ai-sdk/provider';
-import { simulateReadableStream } from 'ai';
 import { DEFAULT_CACHE_TTL } from '@synapse/shared';
 import { redisService } from '../services/redis-service.js';
 
-const KEY_PREFIX = 'lm_cache:';
+const KEY_PREFIX = 'fetch_cache:';
+
+// Headers that MUST NOT be forwarded between hops (RFC 2616 §13.5.1)
+const HOP_BY_HOP_HEADERS = new Set([
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+]);
+
+/**
+ * Structured cache entry that preserves upstream status and headers.
+ */
+export interface CacheEntry {
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+}
+
+/**
+ * Convert Headers to a plain object, stripping hop-by-hop headers.
+ */
+function serializeHeaders(headers: Headers): Record<string, string> {
+    const result: Record<string, string> = {};
+    headers.forEach((value, key) => {
+        if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+            result[key] = value;
+        }
+    });
+    return result;
+}
+
+/**
+ * Parse a cached value, supporting both new CacheEntry format and legacy plain strings.
+ */
+function parseCacheEntry(cached: string): CacheEntry {
+    try {
+        const parsed = JSON.parse(cached) as Record<string, unknown>;
+        if (typeof parsed === 'object' && parsed !== null && typeof parsed.body === 'string') {
+            return parsed as unknown as CacheEntry;
+        }
+    } catch {
+        // Not JSON — legacy plain string
+    }
+    return { status: 200, headers: { 'content-type': 'application/json' }, body: cached };
+}
 
 /**
  * Context stored in AsyncLocalStorage for cache metadata communication
@@ -44,160 +88,163 @@ export function isCacheEnabled(): boolean {
 }
 
 /**
- * Compute a deterministic cache key from the full call parameters.
+ * Compute a deterministic cache key from URL and body.
+ * TODO: This ignores forwarded request headers (e.g. anthropic-beta, accept).
+ * Two requests with the same body but different headers can produce different
+ * upstream responses yet share a cache entry. Consider including a normalized
+ * subset of forwarded headers in the hash.
  */
-function computeCacheKey(prefix: string, params: unknown): string {
-    const identifier = JSON.stringify(params);
-    const hash = createHash('sha256').update(identifier).digest('hex');
-    return `${KEY_PREFIX}${prefix}:${hash}`;
+function computeCacheKey(url: string, body: string): string {
+    const hash = createHash('sha256').update(url + body).digest('hex');
+    return `${KEY_PREFIX}${hash}`;
+}
+
+export interface CachedFetchResult {
+    response: Response;
+    cacheHit: boolean;
+    cacheKey: string;
+    cacheTtl: number;
 }
 
 /**
- * AI SDK LanguageModelV3Middleware that caches LLM responses in Redis.
+ * Fetch with Redis caching at the HTTP level.
  *
- * - wrapGenerate: Caches full generation results (non-streaming)
- * - wrapStream: Caches collected stream chunks and replays them on hit
- *
- * Cache metadata is written to the AsyncLocalStorage context so the chat
- * handler can include it in request logs.
+ * - Non-streaming hit: returns cached body as a new Response
+ * - Non-streaming miss: fetches, stores body in Redis, returns Response
+ * - Streaming hit: returns cached body replayed as a ReadableStream
+ * - Streaming miss: fetches, tee()s the stream to collect + cache, returns client stream
  */
-export const lmCacheMiddleware: LanguageModelV3Middleware = {
-    specificationVersion: 'v3',
+export async function cachedFetch(
+    url: string,
+    init: RequestInit,
+    options: { streaming: boolean },
+): Promise<CachedFetchResult> {
+    const body = typeof init.body === 'string' ? init.body : '';
+    const cacheKey = computeCacheKey(url, body);
 
-    wrapGenerate: async ({ doGenerate, params }) => {
-        if (!isCacheEnabled()) {
-            return doGenerate();
-        }
+    if (!isCacheEnabled()) {
+        const response = await fetch(url, init);
+        return { response, cacheHit: false, cacheKey, cacheTtl: 0 };
+    }
 
-        const ttl = getCacheTtl();
-        const cacheKey = computeCacheKey('generate', params);
+    const ttl = getCacheTtl();
 
-        // Write cache key and TTL to context (will be updated with hit status)
-        const ctx = cacheStore.getStore();
-        if (ctx) {
-            ctx.cacheKey = cacheKey;
-            ctx.ttl = ttl;
-        }
+    // Try cache read
+    try {
+        const cached = await redisService.get(cacheKey);
+        if (cached) {
+            const entry = parseCacheEntry(cached);
 
-        // Check cache
-        try {
-            const cached = await redisService.get(cacheKey);
-            if (cached) {
-                const parsed = JSON.parse(cached);
-
-                // Re-hydrate Date objects that were serialized as strings
-                if (parsed.response?.timestamp) {
-                    parsed.response.timestamp = new Date(parsed.response.timestamp);
-                }
-
-                if (ctx) {
-                    ctx.hit = true;
-                }
-
-                return parsed;
-            }
-        } catch {
-            // Cache read/parse failure — proceed to generate
-        }
-
-        // Cache miss — call the model
-        const result = await doGenerate();
-
-        if (ctx) {
-            ctx.hit = false;
-        }
-
-        // Fire-and-forget cache write
-        try {
-            redisService.set(cacheKey, JSON.stringify(result), ttl);
-        } catch {
-            // Ignore cache write errors
-        }
-
-        return result;
-    },
-
-    wrapStream: async ({ doStream, params }) => {
-        if (!isCacheEnabled()) {
-            return doStream();
-        }
-
-        const ttl = getCacheTtl();
-        const cacheKey = computeCacheKey('stream', params);
-
-        // Write cache key and TTL to context
-        const ctx = cacheStore.getStore();
-        if (ctx) {
-            ctx.cacheKey = cacheKey;
-            ctx.ttl = ttl;
-        }
-
-        // Check cache
-        try {
-            const cached = await redisService.get(cacheKey);
-            if (cached) {
-                const chunks: LanguageModelV3StreamPart[] = JSON.parse(cached);
-
-                // Re-hydrate Date timestamps
-                const formattedChunks = chunks.map((part) => {
-                    if (part.type === 'response-metadata' && part.timestamp) {
-                        return { ...part, timestamp: new Date(part.timestamp) };
-                    }
-                    return part;
+            if (options.streaming) {
+                // Replay cached body as a streaming response
+                const encoder = new TextEncoder();
+                const stream = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(encoder.encode(entry.body));
+                        controller.close();
+                    },
                 });
 
-                if (ctx) {
-                    ctx.hit = true;
-                }
+                const responseHeaders = new Headers(entry.headers);
+                responseHeaders.set('Cache-Control', 'no-cache');
+                responseHeaders.set('Connection', 'keep-alive');
 
-                return {
-                    stream: simulateReadableStream({
-                        chunks: formattedChunks,
-                        chunkDelayInMs: 0,
-                    }),
-                };
+                const response = new Response(stream, {
+                    status: entry.status,
+                    headers: responseHeaders,
+                });
+
+                return { response, cacheHit: true, cacheKey, cacheTtl: ttl };
             }
-        } catch {
-            // Cache read/parse failure — proceed to stream
+
+            // Non-streaming: return cached body as Response
+            const response = new Response(entry.body, {
+                status: entry.status,
+                headers: entry.headers,
+            });
+
+            return { response, cacheHit: true, cacheKey, cacheTtl: ttl };
         }
+    } catch {
+        // Cache read failure — proceed to fetch
+    }
 
-        // Cache miss — call the model
-        const { stream, ...rest } = await doStream();
+    // Cache miss — fetch from upstream
+    const response = await fetch(url, init);
 
-        if (ctx) {
-            ctx.hit = false;
-        }
+    if (!response.ok) {
+        // Don't cache error responses
+        return { response, cacheHit: false, cacheKey, cacheTtl: 0 };
+    }
 
-        // Collect chunks and cache after stream completes
-        const collectedChunks: LanguageModelV3StreamPart[] = [];
-        let hasError = false;
+    if (options.streaming && response.body) {
+        // Tee the stream: one for client, one for caching
+        const [clientStream, cacheStream] = response.body.tee();
 
-        const transformStream = new TransformStream<
-            LanguageModelV3StreamPart,
-            LanguageModelV3StreamPart
-        >({
-            transform(chunk, controller) {
-                collectedChunks.push(chunk);
-                if (chunk.type === 'error') {
-                    hasError = true;
-                }
-                controller.enqueue(chunk);
-            },
-            flush() {
-                // Only cache if no errors occurred
-                if (!hasError) {
-                    try {
-                        redisService.set(cacheKey, JSON.stringify(collectedChunks), ttl);
-                    } catch {
-                        // Ignore cache write errors
-                    }
-                }
-            },
+        // Collect and cache in background (include status + headers)
+        collectAndCache(cacheStream, cacheKey, ttl, response.status, serializeHeaders(response.headers));
+
+        const proxyResponse = new Response(clientStream, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
         });
 
-        return {
-            stream: stream.pipeThrough(transformStream),
-            ...rest,
+        return { response: proxyResponse, cacheHit: false, cacheKey, cacheTtl: ttl };
+    }
+
+    // Non-streaming: read body, cache, and return
+    const responseBody = await response.text();
+
+    try {
+        const entry: CacheEntry = {
+            status: response.status,
+            headers: serializeHeaders(response.headers),
+            body: responseBody,
         };
-    },
-};
+        redisService.set(cacheKey, JSON.stringify(entry), ttl);
+    } catch {
+        // Ignore cache write errors
+    }
+
+    const proxyResponse = new Response(responseBody, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+    });
+
+    return { response: proxyResponse, cacheHit: false, cacheKey, cacheTtl: ttl };
+}
+
+/**
+ * Collect a ReadableStream into a string and store it in Redis as a CacheEntry.
+ */
+async function collectAndCache(
+    stream: ReadableStream<Uint8Array>,
+    cacheKey: string,
+    ttl: number,
+    status: number,
+    headers: Record<string, string>,
+): Promise<void> {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let collected = '';
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            collected += decoder.decode(value, { stream: true });
+        }
+
+        // Stream was already filtered by response.ok check above, safe to cache
+        if (collected) {
+            const entry: CacheEntry = { status, headers, body: collected };
+            redisService.set(cacheKey, JSON.stringify(entry), ttl);
+        }
+    } catch {
+        // Ignore collection/cache errors
+    } finally {
+        reader.releaseLock();
+    }
+}

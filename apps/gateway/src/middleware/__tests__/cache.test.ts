@@ -13,26 +13,16 @@ vi.mock('../../services/redis-service.js', () => ({
     redisService: mockRedisService,
 }));
 
-// Mock simulateReadableStream from ai
-vi.mock('ai', () => ({
-    simulateReadableStream: vi.fn(({ chunks }: { chunks: unknown[] }) => {
-        return new ReadableStream({
-            start(controller) {
-                for (const chunk of chunks) {
-                    controller.enqueue(chunk);
-                }
-                controller.close();
-            },
-        });
-    }),
-}));
-
 // Mock @synapse/shared
 vi.mock('@synapse/shared', () => ({
     DEFAULT_CACHE_TTL: 3600,
 }));
 
-import { lmCacheMiddleware, cacheStore, isCacheEnabled, type CacheContext } from '../../middleware/cache.js';
+// Mock global fetch
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
+
+import { cachedFetch, cacheStore, isCacheEnabled, type CacheContext } from '../../middleware/cache.js';
 
 describe('Cache Middleware', () => {
     beforeEach(() => {
@@ -73,331 +63,254 @@ describe('Cache Middleware', () => {
         });
     });
 
-    describe('wrapGenerate', () => {
-        const mockParams = {
-            prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
-        };
+    describe('cachedFetch - non-streaming', () => {
+        it('should return cached response on hit with stored status and headers', async () => {
+            const cachedBody = JSON.stringify({ choices: [{ message: { content: 'cached' } }] });
+            const cacheEntry = JSON.stringify({
+                status: 200,
+                headers: { 'content-type': 'application/json', 'x-request-id': 'cached-req-1' },
+                body: cachedBody,
+            });
+            mockRedisService.get.mockResolvedValue(cacheEntry);
 
-        const mockGenerateResult = {
-            text: 'Hello there!',
-            usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 },
-            finishReason: 'stop',
-            response: {
-                timestamp: new Date('2025-01-01T00:00:00Z'),
-            },
-        };
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
+            );
 
-        const doGenerate = vi.fn().mockResolvedValue(mockGenerateResult);
-        const doStream = vi.fn();
-        const mockModel = {} as any;
+            expect(result.cacheHit).toBe(true);
+            expect(mockFetch).not.toHaveBeenCalled();
+            expect(result.response.status).toBe(200);
+            expect(result.response.headers.get('x-request-id')).toBe('cached-req-1');
 
-        beforeEach(() => {
-            doGenerate.mockClear().mockResolvedValue(mockGenerateResult);
+            const body = await result.response.text();
+            expect(body).toBe(cachedBody);
+        });
+
+        it('should handle legacy plain-string cache entries', async () => {
+            const legacyBody = JSON.stringify({ choices: [{ message: { content: 'legacy' } }] });
+            // Simulate a legacy entry that is a JSON body without the CacheEntry wrapper.
+            // parseCacheEntry will see it has no .body field and treat as legacy.
+            mockRedisService.get.mockResolvedValue(legacyBody);
+
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
+            );
+
+            expect(result.cacheHit).toBe(true);
+            expect(result.response.status).toBe(200);
+            const body = await result.response.text();
+            expect(body).toBe(legacyBody);
+        });
+
+        it('should store CacheEntry with status and headers on miss', async () => {
+            const responseBody = JSON.stringify({ choices: [{ message: { content: 'fresh' } }] });
+            mockRedisService.get.mockResolvedValue(null);
+            mockFetch.mockResolvedValue(new Response(responseBody, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', 'x-request-id': 'fresh-req-1' },
+            }));
+
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
+            );
+
+            expect(result.cacheHit).toBe(false);
+            expect(mockFetch).toHaveBeenCalled();
+
+            // Verify the stored value is a CacheEntry JSON
+            const storedValue = mockRedisService.set.mock.calls[0]![1] as string;
+            const storedEntry = JSON.parse(storedValue);
+            expect(storedEntry.status).toBe(200);
+            expect(storedEntry.headers['content-type']).toBe('application/json');
+            expect(storedEntry.headers['x-request-id']).toBe('fresh-req-1');
+            expect(storedEntry.body).toBe(responseBody);
+
+            const body = await result.response.text();
+            expect(body).toBe(responseBody);
+        });
+
+        it('should not cache error responses', async () => {
+            mockRedisService.get.mockResolvedValue(null);
+            mockFetch.mockResolvedValue(new Response('{"error":"bad request"}', {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+            }));
+
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
+            );
+
+            expect(result.cacheHit).toBe(false);
+            expect(mockRedisService.set).not.toHaveBeenCalled();
         });
 
         it('should passthrough when cache is disabled', async () => {
             mockRedisService.available = false;
+            const responseBody = '{"result":"ok"}';
+            mockFetch.mockResolvedValue(new Response(responseBody, { status: 200 }));
 
-            const result = await lmCacheMiddleware.wrapGenerate!({
-                doGenerate,
-                doStream,
-                params: mockParams as any,
-                model: mockModel,
-            });
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{}' },
+                { streaming: false },
+            );
 
-            expect(result).toEqual(mockGenerateResult);
+            expect(result.cacheHit).toBe(false);
             expect(mockRedisService.get).not.toHaveBeenCalled();
-        });
-
-        it('should return cached result on hit', async () => {
-            const cachedResult = {
-                ...mockGenerateResult,
-                response: {
-                    timestamp: '2025-01-01T00:00:00.000Z',
-                },
-            };
-            mockRedisService.get.mockResolvedValue(JSON.stringify(cachedResult));
-
-            const ctx: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-
-            const result = await cacheStore.run(ctx, () =>
-                lmCacheMiddleware.wrapGenerate!({
-                    doGenerate,
-                    doStream,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
-            );
-
-            expect(doGenerate).not.toHaveBeenCalled();
-            expect(result.response?.timestamp).toBeInstanceOf(Date);
-            expect(ctx.hit).toBe(true);
-        });
-
-        it('should call doGenerate and cache on miss', async () => {
-            mockRedisService.get.mockResolvedValue(null);
-
-            const ctx: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-
-            const result = await cacheStore.run(ctx, () =>
-                lmCacheMiddleware.wrapGenerate!({
-                    doGenerate,
-                    doStream,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
-            );
-
-            expect(result).toEqual(mockGenerateResult);
-            expect(doGenerate).toHaveBeenCalled();
-            expect(mockRedisService.set).toHaveBeenCalled();
-            expect(ctx.hit).toBe(false);
         });
 
         it('should use custom TTL from environment', async () => {
             process.env.CACHE_TTL = '7200';
             mockRedisService.get.mockResolvedValue(null);
+            mockFetch.mockResolvedValue(new Response('{"ok":true}', {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            }));
 
-            const ctx: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-
-            await cacheStore.run(ctx, () =>
-                lmCacheMiddleware.wrapGenerate!({
-                    doGenerate,
-                    doStream,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
+            await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{}' },
+                { streaming: false },
             );
 
-            expect(ctx.ttl).toBe(7200);
             expect(mockRedisService.set).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.any(String),
                 7200,
             );
+
+            // Verify it's a CacheEntry
+            const storedValue = mockRedisService.set.mock.calls[0]![1] as string;
+            const storedEntry = JSON.parse(storedValue);
+            expect(storedEntry.body).toBe('{"ok":true}');
         });
 
-        it('should produce deterministic cache keys for same params', async () => {
+        it('should produce deterministic cache keys for same URL and body', async () => {
             const keys: string[] = [];
             mockRedisService.get.mockImplementation(async (key: string) => {
                 keys.push(key);
                 return null;
             });
+            mockFetch.mockImplementation(async () => new Response('{}', { status: 200 }));
 
-            const ctx1: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-            const ctx2: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-
-            await cacheStore.run(ctx1, () =>
-                lmCacheMiddleware.wrapGenerate!({
-                    doGenerate,
-                    doStream,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
+            await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
             );
 
-            await cacheStore.run(ctx2, () =>
-                lmCacheMiddleware.wrapGenerate!({
-                    doGenerate,
-                    doStream,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
+            await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test"}' },
+                { streaming: false },
             );
 
             expect(keys[0]).toBe(keys[1]);
-            expect(ctx1.cacheKey).toBe(ctx2.cacheKey);
         });
 
         it('should handle cache read errors gracefully', async () => {
             mockRedisService.get.mockRejectedValue(new Error('Redis error'));
+            mockFetch.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
 
-            const result = await lmCacheMiddleware.wrapGenerate!({
-                doGenerate,
-                doStream,
-                params: mockParams as any,
-                model: mockModel,
-            });
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{}' },
+                { streaming: false },
+            );
 
-            expect(result).toEqual(mockGenerateResult);
-            expect(doGenerate).toHaveBeenCalled();
+            expect(result.cacheHit).toBe(false);
+            expect(mockFetch).toHaveBeenCalled();
         });
     });
 
-    describe('wrapStream', () => {
-        const mockParams = {
-            prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
-        };
-
-        const mockModel = {} as any;
-
-        // Use `any[]` for mock chunks to avoid complex V3 type requirements in tests
-        const createMockStream = (chunks: any[]): ReadableStream => {
-            return new ReadableStream({
-                start(controller) {
-                    for (const chunk of chunks) {
-                        controller.enqueue(chunk);
-                    }
-                    controller.close();
-                },
+    describe('cachedFetch - streaming', () => {
+        it('should return cached body as stream on hit with stored headers', async () => {
+            const cachedBody = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
+            const cacheEntry = JSON.stringify({
+                status: 200,
+                headers: { 'content-type': 'text/event-stream', 'x-request-id': 'cached-stream-1' },
+                body: cachedBody,
             });
-        };
+            mockRedisService.get.mockResolvedValue(cacheEntry);
 
-        const mockStreamChunks = [
-            { type: 'response-metadata', timestamp: new Date('2025-01-01T00:00:00Z'), modelId: 'test' },
-            { type: 'text-start', id: 'chunk-1' },
-            { type: 'text-delta', id: 'chunk-1', delta: 'Hello ' },
-            { type: 'text-delta', id: 'chunk-1', delta: 'world!' },
-            { type: 'text-end', id: 'chunk-1' },
-            {
-                type: 'finish',
-                finishReason: { unified: 'stop', raw: 'stop' },
-                usage: {
-                    inputTokens: { total: 5, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
-                    outputTokens: { total: 10, text: undefined, reasoning: undefined },
-                },
-            },
-        ];
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test","stream":true}' },
+                { streaming: true },
+            );
 
-        it('should passthrough when cache is disabled', async () => {
-            mockRedisService.available = false;
-            const doStream = vi.fn().mockResolvedValue({
-                stream: createMockStream(mockStreamChunks),
-            });
-            const doGenerate = vi.fn();
+            expect(result.cacheHit).toBe(true);
+            expect(mockFetch).not.toHaveBeenCalled();
+            expect(result.response.status).toBe(200);
+            expect(result.response.headers.get('x-request-id')).toBe('cached-stream-1');
+            expect(result.response.headers.get('Cache-Control')).toBe('no-cache');
 
-            const result = await lmCacheMiddleware.wrapStream!({
-                doStream,
-                doGenerate,
-                params: mockParams as any,
-                model: mockModel,
-            });
-
-            expect(mockRedisService.get).not.toHaveBeenCalled();
-
-            // Read the stream to verify it works
-            const reader = result.stream.getReader();
-            const readChunks: any[] = [];
+            // Read the stream
+            const reader = result.response.body!.getReader();
+            const decoder = new TextDecoder();
+            let text = '';
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                readChunks.push(value);
+                text += decoder.decode(value);
             }
-            expect(readChunks.length).toBe(mockStreamChunks.length);
+            expect(text).toBe(cachedBody);
         });
 
-        it('should return simulated stream on cache hit', async () => {
-            const cachedChunks = mockStreamChunks.map((c) => {
-                if (c.type === 'response-metadata' && c.timestamp) {
-                    return { ...c, timestamp: '2025-01-01T00:00:00.000Z' };
-                }
-                return c;
+        it('should fetch and tee stream on miss, storing CacheEntry', async () => {
+            const streamBody = 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n';
+            const encoder = new TextEncoder();
+            const responseStream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(encoder.encode(streamBody));
+                    controller.close();
+                },
             });
-            mockRedisService.get.mockResolvedValue(JSON.stringify(cachedChunks));
 
-            const doStream = vi.fn();
-            const doGenerate = vi.fn();
-            const ctx: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-
-            const result = await cacheStore.run(ctx, () =>
-                lmCacheMiddleware.wrapStream!({
-                    doStream,
-                    doGenerate,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
-            );
-
-            expect(doStream).not.toHaveBeenCalled();
-            expect(ctx.hit).toBe(true);
-            expect(result.stream).toBeDefined();
-        });
-
-        it('should cache stream chunks on miss', async () => {
             mockRedisService.get.mockResolvedValue(null);
-            const doStream = vi.fn().mockResolvedValue({
-                stream: createMockStream(mockStreamChunks),
-            });
-            const doGenerate = vi.fn();
+            mockFetch.mockResolvedValue(new Response(responseStream, {
+                status: 200,
+                headers: { 'Content-Type': 'text/event-stream', 'x-request-id': 'stream-miss-1' },
+            }));
 
-            const ctx: CacheContext = { hit: false, cacheKey: '', ttl: 0 };
-
-            const result = await cacheStore.run(ctx, () =>
-                lmCacheMiddleware.wrapStream!({
-                    doStream,
-                    doGenerate,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
+            const result = await cachedFetch(
+                'https://api.example.com/v1/chat/completions',
+                { method: 'POST', headers: {}, body: '{"model":"test","stream":true}' },
+                { streaming: true },
             );
 
-            expect(doStream).toHaveBeenCalled();
-            expect(ctx.hit).toBe(false);
+            expect(result.cacheHit).toBe(false);
+            expect(mockFetch).toHaveBeenCalled();
 
-            // Consume the stream to trigger flush
-            const reader = result.stream.getReader();
+            // Consume the client stream
+            const reader = result.response.body!.getReader();
+            const decoder = new TextDecoder();
+            let text = '';
             while (true) {
-                const { done } = await reader.read();
+                const { done, value } = await reader.read();
                 if (done) break;
+                text += decoder.decode(value);
             }
+            expect(text).toBe(streamBody);
 
-            // After consuming, the cache should have been set
-            expect(mockRedisService.set).toHaveBeenCalledWith(
-                expect.stringContaining('lm_cache:stream:'),
-                expect.any(String),
-                3600,
-            );
-        });
+            // Wait a tick for background cache write
+            await new Promise(resolve => setTimeout(resolve, 50));
+            expect(mockRedisService.set).toHaveBeenCalled();
 
-        it('should not cache stream chunks when error chunk is present', async () => {
-            mockRedisService.get.mockResolvedValue(null);
-            const errorChunks = [
-                { type: 'text-start', id: 'chunk-1' },
-                { type: 'error', error: 'something went wrong' },
-            ];
-
-            const doStream = vi.fn().mockResolvedValue({
-                stream: createMockStream(errorChunks),
-            });
-            const doGenerate = vi.fn();
-
-            const result = await cacheStore.run(
-                { hit: false, cacheKey: '', ttl: 0 },
-                () => lmCacheMiddleware.wrapStream!({
-                    doStream,
-                    doGenerate,
-                    params: mockParams as any,
-                    model: mockModel,
-                }),
-            );
-
-            // Consume the stream
-            const reader = result.stream.getReader();
-            while (true) {
-                const { done } = await reader.read();
-                if (done) break;
-            }
-
-            // Should not cache because of error
-            expect(mockRedisService.set).not.toHaveBeenCalled();
-        });
-
-        it('should handle cache read errors gracefully during stream', async () => {
-            mockRedisService.get.mockRejectedValue(new Error('Redis error'));
-            const doStream = vi.fn().mockResolvedValue({
-                stream: createMockStream(mockStreamChunks),
-            });
-            const doGenerate = vi.fn();
-
-            const result = await lmCacheMiddleware.wrapStream!({
-                doStream,
-                doGenerate,
-                params: mockParams as any,
-                model: mockModel,
-            });
-
-            expect(doStream).toHaveBeenCalled();
-            expect(result.stream).toBeDefined();
+            // Verify the stored value is a CacheEntry
+            const storedValue = mockRedisService.set.mock.calls[0]![1] as string;
+            const storedEntry = JSON.parse(storedValue);
+            expect(storedEntry.status).toBe(200);
+            expect(storedEntry.headers['content-type']).toBe('text/event-stream');
+            expect(storedEntry.body).toBe(streamBody);
         });
     });
 

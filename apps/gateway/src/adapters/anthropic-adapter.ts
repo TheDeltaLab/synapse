@@ -1,45 +1,145 @@
-import type { ChunkMetadata, StreamingAdapter } from './types.js';
+import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage } from './types.js';
 
-/**
- * Anthropic-style SSE streaming adapter
- * Format: event: content_block_delta\ndata: {"delta":{"type":"text_delta","text":"..."}}\n\n
- */
-export class AnthropicAdapter implements StreamingAdapter {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export class AnthropicAdapter implements ProviderAdapter {
     readonly style = 'anthropic';
 
-    formatChunk(chunk: string, metadata: ChunkMetadata): string {
-        const data = {
-            type: 'content_block_delta',
-            index: metadata.index ?? 0,
-            delta: {
-                type: 'text_delta',
-                text: chunk,
-            },
-        };
-        return `event: content_block_delta\ndata: ${JSON.stringify(data)}\n\n`;
+    parseRequest(requestBody: string): ParsedRequest {
+        try {
+            const body = JSON.parse(requestBody);
+
+            if (Array.isArray(body.messages)) {
+                return {
+                    type: 'chat',
+                    model: body.model,
+                    stream: body.stream ?? false,
+                    messages: body.messages.map((m: any) => ({
+                        role: String(m.role ?? ''),
+                        content: typeof m.content === 'string'
+                            ? m.content
+                            : Array.isArray(m.content)
+                                ? (m.content as any[])
+                                        .filter((b: any) => b.type === 'text')
+                                        .map((b: any) => b.text as string)
+                                        .join('')
+                                : JSON.stringify(m.content),
+                    })),
+                };
+            }
+
+            return { type: 'unknown', model: body.model, stream: body.stream ?? false };
+        } catch {
+            return { type: 'unknown' };
+        }
     }
 
-    formatFinalChunk(_metadata: ChunkMetadata): string {
-        // Anthropic sends a message_delta event with stop_reason
-        const data = {
-            type: 'message_delta',
-            delta: {
-                stop_reason: 'end_turn',
-                stop_sequence: null,
-            },
-        };
-        return `event: message_delta\ndata: ${JSON.stringify(data)}\n\n`;
+    parseResponse(responseBody: string): ParsedResponse {
+        try {
+            const body = JSON.parse(responseBody);
+            const content = this.extractContent(body.content);
+            const usage = this.extractUsage(body.usage);
+            return { content, usage };
+        } catch {
+            return { content: null, usage: null };
+        }
     }
 
-    formatDone(): string {
-        return 'event: message_stop\ndata: {}\n\n';
-    }
+    parseStreamingResponse(ssePayload: string): ParsedResponse {
+        const events = this.parseSSEEvents(ssePayload);
+        let content = '';
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let hasUsage = false;
 
-    getResponseHeaders(): Record<string, string> {
+        for (const event of events) {
+            switch (event.type) {
+                case 'message_start': {
+                    const usage = event.data?.message?.usage;
+                    if (usage) {
+                        hasUsage = true;
+                        inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+                    }
+                    break;
+                }
+                case 'content_block_delta': {
+                    const delta = event.data?.delta;
+                    if (delta?.type === 'text_delta' && typeof delta?.text === 'string') {
+                        content += delta.text;
+                    }
+                    break;
+                }
+                case 'message_delta': {
+                    const usage = event.data?.usage;
+                    if (usage) {
+                        hasUsage = true;
+                        outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+                    }
+                    break;
+                }
+            }
+        }
+
         return {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
+            content: content || null,
+            usage: hasUsage ? {
+                inputTokens: inputTokens,
+                outputTokens,
+            } : null,
         };
+    }
+
+    parseEmbeddingResponse(_responseBody: string): ParsedEmbeddingResponse {
+        // Anthropic does not offer an embedding API
+        return { tokens: null };
+    }
+
+    private extractContent(contentBlocks: any): string | null {
+        if (!Array.isArray(contentBlocks)) return null;
+        const texts = contentBlocks
+            .filter((b: any) => b.type === 'text')
+            .map((b: any) => b.text as string);
+        return texts.length > 0 ? texts.join('') : null;
+    }
+
+    private extractUsage(usage: any): TokenUsage | null {
+        if (!usage) return null;
+
+        const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+        const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+
+        return {
+            inputTokens: inputTokens,
+            outputTokens,
+        };
+    }
+
+    private parseSSEEvents(payload: string): { type: string; data: any }[] {
+        const events: { type: string; data: any }[] = [];
+        const blocks = payload.split('\n\n');
+
+        for (const block of blocks) {
+            const lines = block.trim().split('\n');
+            let eventType = '';
+            let dataStr = '';
+
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    eventType = line.slice(7).trim();
+                } else if (line.startsWith('data: ')) {
+                    dataStr = line.slice(6);
+                }
+            }
+
+            if (eventType && dataStr) {
+                try {
+                    events.push({ type: eventType, data: JSON.parse(dataStr) });
+                } catch {
+                    // skip malformed events
+                }
+            }
+        }
+
+        return events;
     }
 }

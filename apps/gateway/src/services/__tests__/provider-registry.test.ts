@@ -1,90 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockState = vi.hoisted(() => ({
-    openAIConfigs: [] as Array<Record<string, unknown>>,
-    anthropicConfigs: [] as Array<Record<string, unknown>>,
-    googleConfigs: [] as Array<Record<string, unknown>>,
-    openRouterConfigs: [] as Array<Record<string, unknown>>,
-}));
-
-type MockChatModelResult = {
-    modelId: string;
-    provider: string;
-    baseURL?: unknown;
-    hasCustomFetch?: boolean;
-};
-
-type MockEmbeddingModelResult = {
-    modelId: string;
-    provider: string;
-    baseURL?: unknown;
-};
-
-type MockRuntime = ((modelId: string) => MockChatModelResult) & {
-    textEmbeddingModel?: (modelId: string) => MockEmbeddingModelResult;
-};
-
-vi.mock('@ai-sdk/openai', () => ({
-    createOpenAI: vi.fn((config: Record<string, unknown>) => {
-        mockState.openAIConfigs.push(config);
-        const chatFn = vi.fn((modelId: string) => ({
-            modelId,
-            provider: 'openai-chat',
-            baseURL: config.baseURL,
-        }));
-        const embeddingFn = vi.fn((modelId: string) => ({
-            modelId,
-            provider: 'openai-embedding',
-            baseURL: config.baseURL,
-        }));
-        const instance = {
-            chat: chatFn,
-            textEmbeddingModel: embeddingFn,
-        };
-        return instance;
-    }),
-}));
-
-vi.mock('@ai-sdk/anthropic', () => ({
-    createAnthropic: vi.fn((config: Record<string, unknown>) => {
-        mockState.anthropicConfigs.push(config);
-        return vi.fn((modelId: string) => ({
-            modelId,
-            provider: 'anthropic-chat',
-            baseURL: config.baseURL,
-        }));
-    }),
-}));
-
-vi.mock('@ai-sdk/google', () => ({
-    createGoogleGenerativeAI: vi.fn((config: Record<string, unknown>) => {
-        mockState.googleConfigs.push(config);
-        const instance = vi.fn((modelId: string) => ({
-            modelId,
-            provider: 'google-chat',
-            baseURL: config.baseURL,
-        })) as unknown as MockRuntime;
-        instance.textEmbeddingModel = vi.fn((modelId: string) => ({
-            modelId,
-            provider: 'google-embedding',
-            baseURL: config.baseURL,
-        }));
-        return instance;
-    }),
-}));
-
-vi.mock('@openrouter/ai-sdk-provider', () => ({
-    createOpenRouter: vi.fn((config: Record<string, unknown>) => {
-        mockState.openRouterConfigs.push(config);
-        return vi.fn((modelId: string) => ({
-            modelId,
-            provider: 'openrouter-chat',
-            baseURL: config.baseURL,
-            hasCustomFetch: typeof config.fetch === 'function',
-        }));
-    }),
-}));
-
 const envKeys = [
     'OPENAI_API_KEY',
     'OPENAI_BASE_URL',
@@ -102,13 +17,6 @@ const originalEnv = Object.fromEntries(
     envKeys.map(key => [key, process.env[key]]),
 ) as Record<(typeof envKeys)[number], string | undefined>;
 
-function clearMockState() {
-    mockState.openAIConfigs.length = 0;
-    mockState.anthropicConfigs.length = 0;
-    mockState.googleConfigs.length = 0;
-    mockState.openRouterConfigs.length = 0;
-}
-
 async function createRegistry() {
     const { ProviderRegistry } = await import('../provider-registry.js');
     return new ProviderRegistry();
@@ -116,8 +24,6 @@ async function createRegistry() {
 
 beforeEach(() => {
     vi.resetModules();
-    vi.clearAllMocks();
-    clearMockState();
 
     for (const key of envKeys) {
         delete process.env[key];
@@ -137,136 +43,223 @@ afterEach(() => {
 });
 
 describe('ProviderRegistry', () => {
-    it('routes declared chat deployments through the configured sdkAdapter', async () => {
-        process.env.GOOGLE_API_KEY = 'test-google-key';
-        process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-        process.env.OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-        process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+    describe('resolveEndpoint', () => {
+        it('resolves endpoint with explicit provider and known deployment', async () => {
+            process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
 
-        const registry = await createRegistry();
-        const googleModel = registry.getModel('google', 'gemini-2.0-flash-exp') as MockChatModelResult;
-        const openRouterModel = registry.getModel('openrouter', 'gpt-5-mini') as MockChatModelResult;
-        const deepSeekModel = registry.getModel('deepseek', 'deepseek-v3.2') as MockChatModelResult;
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'deepseek-chat',
+                'chat',
+                'deepseek',
+            );
 
-        expect(googleModel.provider).toBe('google-chat');
-        expect(openRouterModel.provider).toBe('openrouter-chat');
-        expect(openRouterModel.hasCustomFetch).toBe(true);
-        expect(deepSeekModel.provider).toBe('openai-chat');
-        expect(deepSeekModel.modelId).toBe('deepseek-chat');
-
-        const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
-        const { createOpenRouter } = await import('@openrouter/ai-sdk-provider');
-        const { createOpenAI } = await import('@ai-sdk/openai');
-
-        expect(vi.mocked(createGoogleGenerativeAI)).toHaveBeenCalledWith(expect.objectContaining({
-            apiKey: 'test-google-key',
-        }));
-        expect(vi.mocked(createOpenRouter)).toHaveBeenCalledWith(expect.objectContaining({
-            apiKey: 'test-openrouter-key',
-            baseURL: 'https://openrouter.ai/api/v1',
-            fetch: expect.any(Function),
-        }));
-        expect(vi.mocked(createOpenAI)).toHaveBeenCalledWith(expect.objectContaining({
-            apiKey: 'test-deepseek-key',
-            baseURL: 'https://api.deepseek.com',
-        }));
-    });
-
-    it('routes declared embedding deployments through the configured sdkAdapter', async () => {
-        process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-        process.env.OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-
-        const registry = await createRegistry();
-        const openRouterEmbedding = registry.getEmbeddingModel('openrouter', 'qwen/qwen3-embedding-8b') as MockEmbeddingModelResult;
-
-        expect(openRouterEmbedding.provider).toBe('openai-embedding');
-        expect(openRouterEmbedding.modelId).toBe('qwen/qwen3-embedding-8b');
-        expect(openRouterEmbedding.baseURL).toBe('https://openrouter.ai/api/v1');
-
-        const { createOpenAI } = await import('@ai-sdk/openai');
-
-        expect(vi.mocked(createOpenAI)).toHaveBeenCalledWith(expect.objectContaining({
-            apiKey: 'test-openrouter-key',
-            baseURL: 'https://openrouter.ai/api/v1',
-        }));
-    });
-
-    it('falls back to the provider-native adapter for undeclared chat models', async () => {
-        process.env.OPENAI_API_KEY = 'test-openai-key';
-
-        const registry = await createRegistry();
-        const model = registry.getModel('openai', 'custom-model') as MockChatModelResult;
-
-        expect(model.provider).toBe('openai-chat');
-        expect(model.modelId).toBe('custom-model');
-    });
-
-    it('reports configured provider availability and embedding support', async () => {
-        process.env.OPENAI_API_KEY = 'test-openai-key';
-        process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
-        process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-        process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
-
-        const registry = await createRegistry();
-
-        expect(registry.hasProvider('openai')).toBe(true);
-        expect(registry.hasProvider('google')).toBe(false);
-        expect(registry.hasProvider('deepseek')).toBe(true);
-        expect(registry.hasEmbeddingSupport('openai')).toBe(false);
-        expect(registry.hasEmbeddingSupport('anthropic')).toBe(false);
-        expect(registry.hasEmbeddingSupport('openrouter')).toBe(true);
-        expect(registry.hasEmbeddingSupport('deepseek')).toBe(false);
-        expect(registry.getAvailableEmbeddingProviders()).toEqual(['openrouter']);
-    });
-
-    it('treats disabled providers as unavailable', async () => {
-        process.env.OPENAI_API_KEY = 'test-openai-key';
-
-        const registry = await createRegistry();
-        const { getProvider: getConfiguredProvider } = await import('../../config/providers.js');
-        const provider = getConfiguredProvider('openai');
-
-        expect(provider).toBeDefined();
-        Object.defineProperty(provider!, 'enabled', {
-            value: false,
-            configurable: true,
+            expect(endpoint.url).toBe('https://api.deepseek.com/v1/chat/completions');
+            expect(endpoint.headers['Authorization']).toBe('Bearer test-deepseek-key');
+            expect(endpoint.headers['Content-Type']).toBeUndefined();
+            expect(endpoint.providerId).toBe('deepseek');
+            expect(endpoint.deployment).toBeDefined();
+            expect(endpoint.deployment?.modelId).toBe('deepseek-chat');
         });
 
-        expect(registry.hasProvider('openai')).toBe(false);
-        expect(registry.getProvider('openai')).toBeUndefined();
-        expect(registry.getAvailableProviders()).toEqual([]);
-        expect(() => registry.getModel('openai', 'custom-model'))
-            .toThrow('Provider openai not found or not configured');
+        it('resolves endpoint with explicit provider for unknown model (fallback)', async () => {
+            process.env.OPENAI_API_KEY = 'test-openai-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'gpt-4o',
+                'chat',
+                'openai',
+            );
+
+            expect(endpoint.url).toBe('https://api.openai.com/v1/chat/completions');
+            expect(endpoint.headers['Authorization']).toBe('Bearer test-openai-key');
+            expect(endpoint.deployment).toBeNull();
+            expect(endpoint.providerId).toBe('openai');
+        });
+
+        it('resolves endpoint via model-based routing (no provider specified)', async () => {
+            process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'gpt-5-mini',
+                'chat',
+            );
+
+            expect(endpoint.url).toBe('https://openrouter.ai/api/v1/chat/completions');
+            expect(endpoint.headers['Authorization']).toBe('Bearer test-openrouter-key');
+            expect(endpoint.providerId).toBe('openrouter');
+            expect(endpoint.deployment?.modelId).toBe('gpt-5-mini');
+        });
+
+        it('resolves Anthropic endpoint with custom auth headers', async () => {
+            process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/messages',
+                'claude-sonnet-4-20250514',
+                'chat',
+                'anthropic',
+            );
+
+            expect(endpoint.url).toBe('https://api.anthropic.com/v1/messages');
+            expect(endpoint.headers['x-api-key']).toBe('test-anthropic-key');
+            expect(endpoint.headers['anthropic-version']).toBe('2023-06-01');
+            expect(endpoint.headers['Authorization']).toBeUndefined();
+        });
+
+        it('resolves embedding endpoint via model-based routing', async () => {
+            process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/embeddings',
+                'qwen/qwen3-embedding-8b',
+                'embedding',
+            );
+
+            expect(endpoint.url).toBe('https://openrouter.ai/api/v1/embeddings');
+            expect(endpoint.providerId).toBe('openrouter');
+        });
+
+        it('throws for unknown model when no provider specified', async () => {
+            const registry = await createRegistry();
+
+            expect(() => registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'unknown-model',
+                'chat',
+            )).toThrow('No deployment found for model unknown-model');
+        });
+
+        it('defaults to OpenAI when neither model nor provider specified', async () => {
+            process.env.OPENAI_API_KEY = 'test-openai-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint('/v1/models');
+
+            expect(endpoint.url).toBe('https://api.openai.com/v1/models');
+            expect(endpoint.headers['Authorization']).toBe('Bearer test-openai-key');
+            expect(endpoint.providerId).toBe('openai');
+            expect(endpoint.deployment).toBeNull();
+        });
+
+        it('resolves with only providerId and no model (e.g. GET requests)', async () => {
+            process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/models',
+                undefined,
+                undefined,
+                'deepseek',
+            );
+
+            expect(endpoint.url).toBe('https://api.deepseek.com/v1/models');
+            expect(endpoint.headers['Authorization']).toBe('Bearer test-deepseek-key');
+            expect(endpoint.providerId).toBe('deepseek');
+            expect(endpoint.deployment).toBeNull();
+        });
+
+        it('resolves with model but no task', async () => {
+            process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'gpt-5-mini',
+            );
+
+            expect(endpoint.url).toBe('https://openrouter.ai/api/v1/chat/completions');
+            expect(endpoint.providerId).toBe('openrouter');
+            expect(endpoint.deployment?.modelId).toBe('gpt-5-mini');
+        });
+
+        it('throws when specified provider is not configured', async () => {
+            const registry = await createRegistry();
+
+            expect(() => registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'some-model',
+                'chat',
+                'openai',
+            )).toThrow('Provider openai not found or not configured');
+        });
+
+        it('uses custom base URL from environment', async () => {
+            process.env.OPENAI_API_KEY = 'test-openai-key';
+            process.env.OPENAI_BASE_URL = 'https://custom.openai.com';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/chat/completions',
+                'gpt-4o',
+                'chat',
+                'openai',
+            );
+
+            expect(endpoint.url).toBe('https://custom.openai.com/v1/chat/completions');
+        });
     });
 
-    it('throws when a provider does not support embeddings', async () => {
-        process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+    describe('provider availability', () => {
+        it('reports configured provider availability and embedding support', async () => {
+            process.env.OPENAI_API_KEY = 'test-openai-key';
+            process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+            process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+            process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
 
-        const registry = await createRegistry();
+            const registry = await createRegistry();
 
-        expect(() => registry.getEmbeddingModel('anthropic', 'some-model'))
-            .toThrow('does not support embeddings');
+            expect(registry.hasProvider('openai')).toBe(true);
+            expect(registry.hasProvider('google')).toBe(false);
+            expect(registry.hasProvider('deepseek')).toBe(true);
+            expect(registry.hasEmbeddingSupport('openai')).toBe(false);
+            expect(registry.hasEmbeddingSupport('anthropic')).toBe(false);
+            expect(registry.hasEmbeddingSupport('openrouter')).toBe(true);
+            expect(registry.hasEmbeddingSupport('deepseek')).toBe(false);
+            expect(registry.getAvailableEmbeddingProviders()).toEqual(['openrouter']);
+        });
+
+        it('treats disabled providers as unavailable', async () => {
+            process.env.OPENAI_API_KEY = 'test-openai-key';
+
+            const registry = await createRegistry();
+            const { getProvider: getConfiguredProvider } = await import('../../config/providers.js');
+            const provider = getConfiguredProvider('openai');
+
+            expect(provider).toBeDefined();
+            Object.defineProperty(provider!, 'enabled', {
+                value: false,
+                configurable: true,
+            });
+
+            expect(registry.hasProvider('openai')).toBe(false);
+            expect(registry.getAvailableProviders()).toEqual([]);
+            expect(() => registry.resolveEndpoint('/v1/chat/completions', 'gpt-4o', 'chat', 'openai'))
+                .toThrow('Provider openai not found or not configured');
+        });
     });
 
-    it('uses reasoning upstream model with body-injecting fetch when reasoning is active', async () => {
-        process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+    describe('embedding methods', () => {
+        it('returns embedding models for a provider', async () => {
+            process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
-        const registry = await createRegistry();
-        const defaultModel = registry.getModel('deepseek', 'deepseek-v3.2') as MockChatModelResult;
-        const reasoningModel = registry.getModel('deepseek', 'deepseek-v3.2', { reasoning: { effort: 'medium' } }) as MockChatModelResult;
+            const registry = await createRegistry();
+            expect(registry.getEmbeddingModels('openrouter')).toEqual(['qwen/qwen3-embedding-8b']);
+        });
 
-        expect(defaultModel.modelId).toBe('deepseek-chat');
-        expect(reasoningModel.modelId).toBe('deepseek-reasoner');
+        it('returns default embedding model', async () => {
+            process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
-        // Verify two separate OpenAI runtimes were created (normal + reasoning with custom fetch)
-        const { createOpenAI } = await import('@ai-sdk/openai');
-        expect(vi.mocked(createOpenAI)).toHaveBeenCalledTimes(2);
-
-        // Second call should include a custom fetch for body injection
-        expect(vi.mocked(createOpenAI)).toHaveBeenNthCalledWith(2, expect.objectContaining({
-            apiKey: 'test-deepseek-key',
-            baseURL: 'https://api.deepseek.com',
-            fetch: expect.any(Function),
-        }));
+            const registry = await createRegistry();
+            expect(registry.getDefaultEmbeddingModel('openrouter')).toBe('qwen/qwen3-embedding-8b');
+            expect(registry.getDefaultEmbeddingModel('anthropic')).toBeNull();
+        });
     });
 });

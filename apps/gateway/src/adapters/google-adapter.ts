@@ -1,54 +1,133 @@
-import type { ChunkMetadata, StreamingAdapter } from './types.js';
+import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage } from './types.js';
 
-/**
- * Google (Gemini)-style SSE streaming adapter
- * Format: data: {"candidates":[{"content":{"parts":[{"text":"..."}]}}]}\n\n
- */
-export class GoogleAdapter implements StreamingAdapter {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export class GoogleAdapter implements ProviderAdapter {
     readonly style = 'google';
 
-    formatChunk(chunk: string, metadata: ChunkMetadata): string {
-        const data = {
-            candidates: [
-                {
-                    content: {
-                        parts: [{ text: chunk }],
-                        role: 'model',
-                    },
-                    index: metadata.index ?? 0,
-                },
-            ],
-            modelVersion: metadata.model,
-        };
-        return `data: ${JSON.stringify(data)}\n\n`;
+    parseRequest(requestBody: string): ParsedRequest {
+        try {
+            const body = JSON.parse(requestBody);
+
+            // Gemini chat: { contents: [{ role, parts: [{ text }] }] }
+            if (Array.isArray(body.contents)) {
+                return {
+                    type: 'chat',
+                    model: body.model,
+                    stream: body.stream ?? false,
+                    messages: body.contents.map((c: any) => ({
+                        role: String(c.role ?? ''),
+                        content: Array.isArray(c.parts)
+                            ? (c.parts as any[])
+                                    .filter((p: any) => typeof p.text === 'string')
+                                    .map((p: any) => p.text as string)
+                                    .join('')
+                            : '',
+                    })),
+                };
+            }
+
+            // Gemini embedding: { content: { parts: [{ text }] } }
+            if (body.content?.parts && !body.contents) {
+                const texts = Array.isArray(body.content.parts)
+                    ? (body.content.parts as any[])
+                            .filter((p: any) => typeof p.text === 'string')
+                            .map((p: any) => p.text as string)
+                    : [];
+                return {
+                    type: 'embedding',
+                    model: body.model,
+                    inputs: texts,
+                };
+            }
+
+            return { type: 'unknown', model: body.model };
+        } catch {
+            return { type: 'unknown' };
+        }
     }
 
-    formatFinalChunk(metadata: ChunkMetadata): string {
-        const data = {
-            candidates: [
-                {
-                    content: {
-                        parts: [],
-                        role: 'model',
-                    },
-                    finishReason: 'STOP',
-                    index: metadata.index ?? 0,
-                },
-            ],
-            modelVersion: metadata.model,
-        };
-        return `data: ${JSON.stringify(data)}\n\n`;
+    parseResponse(responseBody: string): ParsedResponse {
+        try {
+            const body = JSON.parse(responseBody);
+            const content = this.extractContent(body);
+            const usage = this.extractUsage(body.usageMetadata);
+            return { content, usage };
+        } catch {
+            return { content: null, usage: null };
+        }
     }
 
-    formatDone(): string {
-        return 'data: [DONE]\n\n';
-    }
+    parseStreamingResponse(ssePayload: string): ParsedResponse {
+        const chunks = this.parseSSEChunks(ssePayload);
+        let content = '';
+        let usage: TokenUsage | null = null;
 
-    getResponseHeaders(): Record<string, string> {
+        for (const chunk of chunks) {
+            const parts = chunk.candidates?.[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+                for (const part of parts) {
+                    if (typeof part.text === 'string') {
+                        content += part.text;
+                    }
+                }
+            }
+            if (chunk.usageMetadata) {
+                usage = this.extractUsage(chunk.usageMetadata);
+            }
+        }
+
         return {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
+            content: content || null,
+            usage,
         };
+    }
+
+    parseEmbeddingResponse(_responseBody: string): ParsedEmbeddingResponse {
+        // Google embedContent responses do not include token usage
+        return { tokens: null };
+    }
+
+    private extractContent(body: Record<string, unknown>): string | null {
+        const candidates = body.candidates as Record<string, unknown>[] | undefined;
+        const parts = candidates?.[0]?.content as Record<string, unknown> | undefined;
+        const partsArr = parts?.parts as Record<string, unknown>[] | undefined;
+        if (!Array.isArray(partsArr)) return null;
+
+        const texts = partsArr
+            .filter(p => typeof p.text === 'string')
+            .map(p => p.text as string);
+        return texts.length > 0 ? texts.join('') : null;
+    }
+
+    private extractUsage(metadata: Record<string, unknown> | undefined): TokenUsage | null {
+        if (!metadata) return null;
+
+        const promptTokens = typeof metadata.promptTokenCount === 'number' ? metadata.promptTokenCount : 0;
+        const outputTokens = typeof metadata.candidatesTokenCount === 'number' ? metadata.candidatesTokenCount : 0;
+
+        return {
+            inputTokens: promptTokens,
+            outputTokens,
+        };
+    }
+
+    private parseSSEChunks(payload: string): Record<string, any>[] {
+        const chunks: Record<string, any>[] = [];
+        const lines = payload.split('\n');
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+                chunks.push(JSON.parse(data));
+            } catch {
+                // skip malformed chunks
+            }
+        }
+
+        return chunks;
     }
 }

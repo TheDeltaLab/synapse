@@ -1,35 +1,37 @@
 import { AnthropicAdapter } from './anthropic-adapter.js';
 import { GoogleAdapter } from './google-adapter.js';
 import { OpenAIAdapter } from './openai-adapter.js';
-import type { StreamingAdapter } from './types.js';
+import type { ProviderAdapter } from './types.js';
 
-// Re-export types and adapters
-export type { ChunkMetadata, StreamingAdapter } from './types.js';
-export { OpenAIAdapter } from './openai-adapter.js';
-export { AnthropicAdapter } from './anthropic-adapter.js';
-export { GoogleAdapter } from './google-adapter.js';
+export type ResponseStyle = 'openai' | 'anthropic' | 'google';
 
-/**
- * Registry of streaming adapters by style name
- */
-const adapters = new Map<string, StreamingAdapter>();
-adapters.set('openai', new OpenAIAdapter());
-adapters.set('anthropic', new AnthropicAdapter());
-adapters.set('google', new GoogleAdapter());
+const providerStyleMap: Record<string, ResponseStyle> = {
+    openai: 'openai',
+    openrouter: 'openai',
+    deepseek: 'openai',
+    anthropic: 'anthropic',
+    google: 'google',
+};
 
-/**
- * Get a streaming adapter by style name
- * @param style - The adapter style ('openai', 'anthropic', 'google')
- * @returns The streaming adapter, defaults to OpenAI if style not found
- */
-export function getAdapter(style: string): StreamingAdapter {
-    return adapters.get(style.toLowerCase()) || adapters.get('openai')!;
+const adapters: Record<ResponseStyle, ProviderAdapter> = {
+    openai: new OpenAIAdapter(),
+    anthropic: new AnthropicAdapter(),
+    google: new GoogleAdapter(),
+};
+
+export function getProviderAdapter(
+    providerId: string,
+    headerOverride?: string,
+): ProviderAdapter {
+    if (headerOverride) {
+        const normalized = headerOverride.toLowerCase();
+        if (normalized in adapters) {
+            return adapters[normalized as ResponseStyle];
+        }
+    }
+
+    const style = providerStyleMap[providerId] ?? 'openai';
+    return adapters[style];
 }
 
-/**
- * Get all available adapter styles
- * @returns Array of available style names
- */
-export function getAvailableStyles(): string[] {
-    return Array.from(adapters.keys());
-}
+export type { ProviderAdapter, ParsedResponse, ParsedEmbeddingResponse, TokenUsage, ParsedRequest, RequestType, ChatMessage } from './types.js';
