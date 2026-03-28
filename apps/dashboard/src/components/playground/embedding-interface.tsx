@@ -86,6 +86,19 @@ export function EmbeddingInterface() {
                                     onCheckedChange={cacheEnabled => updateSettings({ cacheEnabled })}
                                 />
                             </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <Label>Cache</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Use cached responses when available
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={settings.cacheEnabled}
+                                    onCheckedChange={cacheEnabled => updateSettings({ cacheEnabled })}
+                                />
+                            </div>
                         </div>
                     </div>
 
