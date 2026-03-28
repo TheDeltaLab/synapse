@@ -168,6 +168,15 @@ importers:
         specifier: ^5.6.0
         version: 5.11.0
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^3.0.64
+        version: 3.0.64(zod@3.25.76)
+      '@ai-sdk/google':
+        specifier: ^3.0.53
+        version: 3.0.53(zod@3.25.76)
+      '@ai-sdk/openai':
+        specifier: ^3.0.48
+        version: 3.0.48(zod@3.25.76)
       '@synapse/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
@@ -177,6 +186,9 @@ importers:
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.15
+      ai:
+        specifier: ^6.0.141
+        version: 6.0.141(zod@3.25.76)
       eslint:
         specifier: 'catalog:'
         version: 9.39.4(jiti@2.6.1)

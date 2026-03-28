@@ -10,6 +10,16 @@ declare module 'hono' {
 }
 
 export async function authMiddleware(c: Context, next: Next) {
+    if (process.env.AUTH_DISABLED === 'true') {
+        c.set('apiKey', {
+            id: 'auth-disabled',
+            name: 'auth-disabled',
+            userId: null,
+            rateLimit: Infinity,
+        });
+        return next();
+    }
+
     const authHeader = c.req.header('Authorization');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
