@@ -167,6 +167,25 @@ describe('AnthropicAdapter', () => {
         });
     });
 
+    describe('matchRoute', () => {
+        it('should match POST /v1/messages', () => {
+            const result = adapter.matchRoute('POST', '/v1/messages');
+            expect(result).toEqual({ cacheable: true });
+        });
+
+        it('should reject GET method', () => {
+            expect(adapter.matchRoute('GET', '/v1/messages')).toBeNull();
+        });
+
+        it('should reject unknown path', () => {
+            expect(adapter.matchRoute('POST', '/v1/chat/completions')).toBeNull();
+        });
+
+        it('should reject non-Anthropic path', () => {
+            expect(adapter.matchRoute('POST', '/v1/embeddings')).toBeNull();
+        });
+    });
+
     describe('parseEmbeddingResponse', () => {
         it('should always return null tokens', () => {
             const body = JSON.stringify({ some: 'data' });

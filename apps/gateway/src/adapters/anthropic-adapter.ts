@@ -1,9 +1,19 @@
-import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage } from './types.js';
+import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage, RouteMatch } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+const ALLOWED_PATHS = new Set([
+    '/v1/messages',
+]);
+
 export class AnthropicAdapter implements ProviderAdapter {
     readonly style = 'anthropic';
+
+    matchRoute(method: string, path: string): RouteMatch | null {
+        if (method !== 'POST') return null;
+        if (!ALLOWED_PATHS.has(path)) return null;
+        return { cacheable: true };
+    }
 
     parseRequest(requestBody: string): ParsedRequest {
         try {

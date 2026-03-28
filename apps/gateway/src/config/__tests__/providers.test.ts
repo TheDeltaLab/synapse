@@ -132,6 +132,18 @@ describe('providers config', () => {
         });
     });
 
+    it('declares Anthropic chat deployments', () => {
+        const sonnet = getDeployment('anthropic', 'claude-sonnet-4-6', 'chat');
+        expect(sonnet).toBeDefined();
+        expect(sonnet?.isDefault).toBe(true);
+
+        const opus = getDeployment('anthropic', 'claude-opus-4-6', 'chat');
+        expect(opus).toBeDefined();
+
+        const haiku = getDeployment('anthropic', 'claude-haiku-4-5-20251001', 'chat');
+        expect(haiku).toBeDefined();
+    });
+
     it('declares OpenRouter embedding deployment', () => {
         const deployment = getDeployment('openrouter', 'qwen/qwen3-embedding-8b', 'embedding');
 
@@ -155,6 +167,11 @@ describe('providers config', () => {
 
     it('returns chat and embedding deployments by provider', () => {
         expect(getChatDeployments('openai')).toEqual([]);
+        expect(getChatDeployments('anthropic').map(deployment => deployment.modelId)).toEqual([
+            'claude-sonnet-4-6',
+            'claude-opus-4-6',
+            'claude-haiku-4-5-20251001',
+        ]);
         expect(getChatDeployments('google').map(deployment => deployment.modelId)).toEqual([
             'gemini-2.0-flash-exp',
         ]);
@@ -174,6 +191,7 @@ describe('providers config', () => {
 
     it('returns default models from deployments', () => {
         expect(getDefaultChatModel('openai')).toBeUndefined();
+        expect(getDefaultChatModel('anthropic')).toBe('claude-sonnet-4-6');
         expect(getDefaultChatModel('google')).toBe('gemini-2.0-flash-exp');
         expect(getDefaultChatModel('openrouter')).toBe('gpt-5-mini');
         expect(getDefaultChatModel('deepseek')).toBe('deepseek-chat');

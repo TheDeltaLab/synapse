@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useChat } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
+import { DefaultChatTransport } from 'ai';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ProviderInfo } from '@synapse/shared';
 import type { ModelSelection } from '@/components/playground/model-selector';
 import { DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS } from '@/lib/constants';
 import { gateway } from '@/lib/gateway';
 
-export interface Message {
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-}
+export type Message = UIMessage;
 
 export interface ChatSettings {
     modelSelection: ModelSelection;
@@ -43,10 +42,7 @@ function getDefaultChatSelection(providers: ProviderInfo[]): ModelSelection | nu
     };
 }
 
-export function useChat() {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+export function usePlaygroundChat(apiKey: string) {
     const [settings, setSettings] = useState<ChatSettings>({
         modelSelection: { provider: '', model: '' },
         temperature: DEFAULT_TEMPERATURE,
@@ -95,68 +91,49 @@ export function useChat() {
         };
     }, []);
 
-    const sendMessage = useCallback(async (content: string, apiKey: string) => {
+    // Use a ref so the transport body closure always reads the latest values
+    const bodyRef = useRef({
+        apiKey,
+        model: settings.modelSelection.model,
+        provider: settings.modelSelection.provider,
+        temperature: settings.temperature,
+        maxOutputTokens: settings.maxTokens,
+        cacheEnabled: settings.cacheEnabled,
+    });
+    bodyRef.current = {
+        apiKey,
+        model: settings.modelSelection.model,
+        provider: settings.modelSelection.provider,
+        temperature: settings.temperature,
+        maxOutputTokens: settings.maxTokens,
+        cacheEnabled: settings.cacheEnabled,
+    };
+
+    const [transport] = useState(() => new DefaultChatTransport({
+        api: '/api/chat',
+        body: () => bodyRef.current,
+    }));
+
+    const {
+        messages,
+        sendMessage: aiSendMessage,
+        setMessages,
+        status,
+        error: aiError,
+    } = useChat({ transport });
+
+    const isLoading = status === 'submitted' || status === 'streaming';
+    const error = aiError ? aiError.message : null;
+
+    const sendMessage = useCallback((content: string) => {
         if (!content.trim() || !apiKey.trim()) return;
-
-        if (!settings.modelSelection.provider || !settings.modelSelection.model) {
-            setError('Select an available model before sending');
-            return;
-        }
-
-        const userMessage: Message = {
-            id: crypto.randomUUID(),
-            role: 'user',
-            content: content.trim(),
-        };
-
-        setMessages(prev => [...prev, userMessage]);
-        setIsLoading(true);
-        setError(null);
-
-        const assistantMessage: Message = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: '',
-        };
-
-        setMessages(prev => [...prev, assistantMessage]);
-
-        try {
-            const allMessages = [...messages, userMessage].map(m => ({
-                role: m.role,
-                content: m.content,
-            }));
-
-            const stream = gateway.streamChatCompletion(apiKey, allMessages, {
-                model: settings.modelSelection.model,
-                provider: settings.modelSelection.provider,
-                temperature: settings.temperature,
-                maxTokens: settings.maxTokens,
-                cacheEnabled: settings.cacheEnabled,
-            });
-
-            for await (const chunk of stream) {
-                setMessages(prev =>
-                    prev.map(m =>
-                        m.id === assistantMessage.id
-                            ? { ...m, content: m.content + chunk }
-                            : m,
-                    ),
-                );
-            }
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to get response';
-            setError(errorMessage);
-            setMessages(prev => prev.filter(m => m.id !== assistantMessage.id));
-        } finally {
-            setIsLoading(false);
-        }
-    }, [messages, settings]);
+        if (!settings.modelSelection.provider || !settings.modelSelection.model) return;
+        aiSendMessage({ text: content.trim() });
+    }, [apiKey, settings.modelSelection, aiSendMessage]);
 
     const clearMessages = useCallback(() => {
         setMessages([]);
-        setError(null);
-    }, []);
+    }, [setMessages]);
 
     const updateSettings = useCallback((newSettings: Partial<ChatSettings>) => {
         setSettings(prev => ({ ...prev, ...newSettings }));

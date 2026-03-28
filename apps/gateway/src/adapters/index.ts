@@ -34,4 +34,4 @@ export function getProviderAdapter(
     return adapters[style];
 }
 
-export type { ProviderAdapter, ParsedResponse, ParsedEmbeddingResponse, TokenUsage, ParsedRequest, RequestType, ChatMessage } from './types.js';
+export type { ProviderAdapter, ParsedResponse, ParsedEmbeddingResponse, TokenUsage, ParsedRequest, RequestType, ChatMessage, RouteMatch } from './types.js';

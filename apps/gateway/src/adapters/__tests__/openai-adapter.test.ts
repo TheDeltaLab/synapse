@@ -191,6 +191,40 @@ describe('OpenAIAdapter', () => {
         });
     });
 
+    describe('matchRoute', () => {
+        it('should match POST /v1/chat/completions', () => {
+            const result = adapter.matchRoute('POST', '/v1/chat/completions');
+            expect(result).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1/embeddings', () => {
+            const result = adapter.matchRoute('POST', '/v1/embeddings');
+            expect(result).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1/completions', () => {
+            const result = adapter.matchRoute('POST', '/v1/completions');
+            expect(result).toEqual({ cacheable: true });
+        });
+
+        it('should match POST /v1/responses', () => {
+            const result = adapter.matchRoute('POST', '/v1/responses');
+            expect(result).toEqual({ cacheable: true });
+        });
+
+        it('should reject GET method', () => {
+            expect(adapter.matchRoute('GET', '/v1/chat/completions')).toBeNull();
+        });
+
+        it('should reject unknown path', () => {
+            expect(adapter.matchRoute('POST', '/v1/models')).toBeNull();
+        });
+
+        it('should reject Anthropic path', () => {
+            expect(adapter.matchRoute('POST', '/v1/messages')).toBeNull();
+        });
+    });
+
     describe('parseEmbeddingResponse', () => {
         it('should extract total_tokens from usage', () => {
             const body = JSON.stringify({

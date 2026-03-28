@@ -5,11 +5,11 @@ import { ApiKeyInput } from './api-key-input';
 import { MessageInput } from './message-input';
 import { MessageList } from './message-list';
 import { SettingsPanel } from './settings-panel';
-import { useChat } from '@/hooks/use-chat';
+import { usePlaygroundChat } from '@/hooks/use-chat';
 
 export function ChatInterface() {
     const [apiKey, setApiKey] = useState('');
-    const { messages, isLoading, error, settings, sendMessage, clearMessages, updateSettings } = useChat();
+    const { messages, isLoading, error, settings, sendMessage, clearMessages, updateSettings } = usePlaygroundChat(apiKey);
     const hasModelSelection = Boolean(settings.modelSelection.provider && settings.modelSelection.model);
 
     let inputPlaceholder = 'Type a message...';
@@ -23,7 +23,7 @@ export function ChatInterface() {
         if (!apiKey.trim() || !hasModelSelection) {
             return;
         }
-        sendMessage(content, apiKey);
+        sendMessage(content);
     };
 
     return (
