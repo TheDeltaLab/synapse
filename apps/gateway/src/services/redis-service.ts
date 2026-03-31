@@ -1,9 +1,13 @@
+import { DefaultAzureCredential } from '@azure/identity';
+import { EntraIdCredentialsProviderFactory, REDIS_SCOPE_DEFAULT } from '@redis/entraid';
 import { createClient, type RedisClientType } from 'redis';
 
 /**
  * Redis service singleton for caching LLM responses.
  * Gracefully degrades — never throws on connection or operation failures.
  * Reconnects indefinitely with exponential backoff (max 60s).
+ *
+ * Supports Azure Entra ID authentication when REDIS_USER is set.
  */
 export class RedisService {
     private client: RedisClientType | null = null;
@@ -18,6 +22,8 @@ export class RedisService {
 
     /**
      * Connect to Redis using the REDIS_URL environment variable.
+     * When REDIS_USER is set, authenticates via Azure Entra ID with
+     * automatic token refresh.
      * Non-blocking — logs errors but never throws.
      */
     async connect(): Promise<void> {
@@ -27,17 +33,39 @@ export class RedisService {
             return;
         }
 
+        const useEntraId = url.includes('.redis.azure.net');
+
         try {
-            this.client = createClient({
-                url,
-                socket: {
-                    reconnectStrategy(retries: number) {
-                        const delay = Math.min(retries * 500, 60_000);
-                        console.log(`[Redis] reconnecting attempt #${retries}, next retry in ${delay}ms`);
-                        return delay;
-                    },
+            const socketOptions = {
+                reconnectStrategy(retries: number) {
+                    const delay = Math.min(retries * 500, 60_000);
+                    console.log(`[Redis] reconnecting attempt #${retries}, next retry in ${delay}ms`);
+                    return delay;
                 },
-            });
+            };
+
+            if (useEntraId) {
+                const credential = new DefaultAzureCredential();
+                const credentialsProvider = EntraIdCredentialsProviderFactory.createForDefaultAzureCredential({
+                    credential,
+                    scopes: REDIS_SCOPE_DEFAULT,
+                    tokenManagerConfig: {
+                        expirationRefreshRatio: 0.8,
+                    },
+                });
+
+                this.client = createClient({
+                    url,
+                    credentialsProvider,
+                    socket: socketOptions,
+                });
+                console.log('[Redis] using Azure Entra ID auth');
+            } else {
+                this.client = createClient({
+                    url,
+                    socket: socketOptions,
+                });
+            }
 
             this.client.on('ready', () => {
                 this.connected = true;
@@ -87,7 +115,8 @@ export class RedisService {
         try {
             if (!this.client || !this.connected) return null;
             return await this.client.get(key);
-        } catch {
+        } catch (err) {
+            console.error('[Redis] GET error:', err instanceof Error ? err.message : err);
             return null;
         }
     }
@@ -104,8 +133,8 @@ export class RedisService {
             } else {
                 await this.client.set(key, value);
             }
-        } catch {
-            // Silently fail — caching is best-effort
+        } catch (err) {
+            console.error('[Redis] SET error:', err instanceof Error ? err.message : err);
         }
     }
 
@@ -117,8 +146,8 @@ export class RedisService {
         try {
             if (!this.client || !this.connected) return;
             await this.client.del(key);
-        } catch {
-            // Silently fail
+        } catch (err) {
+            console.error('[Redis] DEL error:', err instanceof Error ? err.message : err);
         }
     }
 }
