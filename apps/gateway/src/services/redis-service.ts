@@ -7,7 +7,7 @@ import { createClient, type RedisClientType } from 'redis';
  * Gracefully degrades — never throws on connection or operation failures.
  * Reconnects indefinitely with exponential backoff (max 60s).
  *
- * Supports Azure Entra ID authentication when REDIS_USER is set.
+ * Supports Azure Entra ID authentication when REDIS_URL contains .redis.azure.net.
  */
 export class RedisService {
     private client: RedisClientType | null = null;
@@ -22,8 +22,8 @@ export class RedisService {
 
     /**
      * Connect to Redis using the REDIS_URL environment variable.
-     * When REDIS_USER is set, authenticates via Azure Entra ID with
-     * automatic token refresh.
+     * When REDIS_URL contains .redis.azure.net, authenticates via Azure Entra ID
+     * with automatic token refresh.
      * Non-blocking — logs errors but never throws.
      */
     async connect(): Promise<void> {
