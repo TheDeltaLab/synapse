@@ -16,9 +16,11 @@
   },
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
+    "@azure/identity": "^4.13.1",
     "@hono/node-server": "catalog:",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
+    "@redis/entraid": "^5.11.0",
     "@synapse/dal": "workspace:*",
     "@synapse/shared": "workspace:*",
     "bcrypt": "^6.0.0",
