@@ -3,6 +3,7 @@ import { createClient, type RedisClientType } from 'redis';
 /**
  * Redis service singleton for caching LLM responses.
  * Gracefully degrades — never throws on connection or operation failures.
+ * Reconnects indefinitely with exponential backoff (max 60s).
  */
 export class RedisService {
     private client: RedisClientType | null = null;
@@ -31,28 +32,31 @@ export class RedisService {
                 url,
                 socket: {
                     reconnectStrategy(retries: number) {
-                        if (retries > 3) return new Error('Max retries exceeded');
-                        return Math.min(retries * 200, 2000);
+                        const delay = Math.min(retries * 500, 60_000);
+                        console.log(`[Redis] reconnecting attempt #${retries}, next retry in ${delay}ms`);
+                        return delay;
                     },
                 },
             });
 
             this.client.on('ready', () => {
                 this.connected = true;
+                console.log('[Redis] connected');
             });
 
             this.client.on('end', () => {
                 this.connected = false;
+                console.log('[Redis] disconnected');
             });
 
             this.client.on('error', (err: Error) => {
-                console.error('Redis error:', err.message);
+                console.error('[Redis] error:', err.message);
                 this.connected = false;
             });
 
             await this.client.connect();
         } catch (error) {
-            console.error('Failed to connect to Redis:', error instanceof Error ? error.message : error);
+            console.error('[Redis] failed to connect:', error instanceof Error ? error.message : error);
             this.client = null;
             this.connected = false;
         }

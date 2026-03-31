@@ -133,6 +133,7 @@ export async function cachedFetch(
     try {
         const cached = await redisService.get(cacheKey);
         if (cached) {
+            console.log(`[Cache] HIT key=${cacheKey.slice(0, 24)}… url=${url}`);
             const entry = parseCacheEntry(cached);
 
             if (options.streaming) {
@@ -164,9 +165,11 @@ export async function cachedFetch(
             });
 
             return { response, cacheHit: true, cacheKey, cacheTtl: ttl };
+        } else {
+            console.log(`[Cache] MISS key=${cacheKey.slice(0, 24)}… url=${url}`);
         }
-    } catch {
-        // Cache read failure — proceed to fetch
+    } catch (err) {
+        console.error('[Cache] read error:', err instanceof Error ? err.message : err);
     }
 
     // Cache miss — fetch from upstream
@@ -202,9 +205,9 @@ export async function cachedFetch(
             headers: serializeHeaders(response.headers),
             body: responseBody,
         };
-        redisService.set(cacheKey, JSON.stringify(entry), ttl);
-    } catch {
-        // Ignore cache write errors
+        await redisService.set(cacheKey, JSON.stringify(entry), ttl);
+    } catch (err) {
+        console.error('[Cache] write error:', err instanceof Error ? err.message : err);
     }
 
     const proxyResponse = new Response(responseBody, {
@@ -240,10 +243,10 @@ async function collectAndCache(
         // Stream was already filtered by response.ok check above, safe to cache
         if (collected) {
             const entry: CacheEntry = { status, headers, body: collected };
-            redisService.set(cacheKey, JSON.stringify(entry), ttl);
+            await redisService.set(cacheKey, JSON.stringify(entry), ttl);
         }
-    } catch {
-        // Ignore collection/cache errors
+    } catch (err) {
+        console.error('[Cache] streaming write error:', err instanceof Error ? err.message : err);
     } finally {
         reader.releaseLock();
     }
