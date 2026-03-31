@@ -2,12 +2,23 @@ import { DefaultAzureCredential } from '@azure/identity';
 import { EntraIdCredentialsProviderFactory, REDIS_SCOPE_DEFAULT } from '@redis/entraid';
 import { createClient, type RedisClientType } from 'redis';
 
+type RedisAuthMethod = 'NONE' | 'PASSWORD' | 'AZURE_ENTRA_ID';
+
+function getAuthMethod(): RedisAuthMethod {
+    const value = (process.env.REDIS_AUTH ?? 'NONE').toUpperCase();
+    if (value === 'PASSWORD' || value === 'AZURE_ENTRA_ID') return value;
+    return 'NONE';
+}
+
 /**
  * Redis service singleton for caching LLM responses.
  * Gracefully degrades — never throws on connection or operation failures.
  * Reconnects indefinitely with exponential backoff (max 60s).
  *
- * Supports Azure Entra ID authentication when REDIS_URL contains .redis.azure.net.
+ * Authentication controlled by REDIS_AUTH env var:
+ *   NONE (default)    — no auth, plain connection
+ *   PASSWORD          — username/password via REDIS_USER and REDIS_PASSWORD
+ *   AZURE_ENTRA_ID    — Azure Entra ID with automatic token refresh
  */
 export class RedisService {
     private client: RedisClientType | null = null;
@@ -22,8 +33,6 @@ export class RedisService {
 
     /**
      * Connect to Redis using the REDIS_URL environment variable.
-     * When REDIS_URL contains .redis.azure.net, authenticates via Azure Entra ID
-     * with automatic token refresh.
      * Non-blocking — logs errors but never throws.
      */
     async connect(): Promise<void> {
@@ -33,7 +42,7 @@ export class RedisService {
             return;
         }
 
-        const useEntraId = url.includes('.redis.azure.net');
+        const authMethod = getAuthMethod();
 
         try {
             const socketOptions = {
@@ -44,7 +53,7 @@ export class RedisService {
                 },
             };
 
-            if (useEntraId) {
+            if (authMethod === 'AZURE_ENTRA_ID') {
                 const credential = new DefaultAzureCredential();
                 const credentialsProvider = EntraIdCredentialsProviderFactory.createForDefaultAzureCredential({
                     credential,
@@ -59,13 +68,21 @@ export class RedisService {
                     credentialsProvider,
                     socket: socketOptions,
                 });
-                console.log('[Redis] using Azure Entra ID auth');
+            } else if (authMethod === 'PASSWORD') {
+                this.client = createClient({
+                    url,
+                    username: process.env.REDIS_USER || undefined,
+                    password: process.env.REDIS_PASSWORD || undefined,
+                    socket: socketOptions,
+                });
             } else {
                 this.client = createClient({
                     url,
                     socket: socketOptions,
                 });
             }
+
+            console.log(`[Redis] auth=${authMethod}`);
 
             this.client.on('ready', () => {
                 this.connected = true;
