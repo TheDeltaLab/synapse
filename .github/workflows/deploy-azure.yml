@@ -193,7 +193,7 @@ jobs:
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: pnpx prisma migrate deploy --schema packages/dal/prisma/schema.prisma
+        run: pnpm --filter @synapse/dal exec prisma migrate deploy
 
   deploy-gateway:
     name: Deploy Gateway (${{ needs.prepare.outputs.environment }})
