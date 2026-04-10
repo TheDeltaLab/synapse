@@ -1,0 +1,504 @@
+name: AKS Deploy
+
+# Unified deployment workflow for AKS:
+# 1. (Optional) Deploy merlin resource changes (ConfigMap, Secret, Ingress, etc.)
+# 2. (Optional) Build Docker images and push to shared ACR (brainlysharedacr)
+# 3. (Optional) Update K8s Deployments to pull the new images
+#
+# On push to main: auto-detects what changed and runs the relevant steps.
+# On manual dispatch: user picks which steps to run.
+#
+# NOTE: This workflow uses brainlysharedacr (the AKS-attached ACR), NOT the
+# GHCR nightly/stable registries in docker.yml. AKS pulls images via managed
+# identity (AcrPull), and this workflow pushes via OIDC + `az acr login`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+    inputs:
+      deploy_resources:
+        description: 'Deploy merlin resource changes (ConfigMap, Ingress, etc.)'
+        required: false
+        type: boolean
+        default: false
+      build_images:
+        description: 'Build and push Docker images to ACR'
+        required: false
+        type: boolean
+        default: false
+      update_deployments:
+        description: 'Update K8s Deployments to pull latest images'
+        required: false
+        type: boolean
+        default: false
+      apps:
+        description: "Apps to build/update (comma-separated or 'all')"
+        required: false
+        default: 'all'
+        type: string
+      ring:
+        description: 'Target ring'
+        required: false
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - staging
+      region:
+        description: 'Target region'
+        required: false
+        default: 'koreacentral'
+        type: choice
+        options:
+          - koreacentral
+          - eastasia
+
+permissions:
+  id-token: write
+  contents: read
+  packages: read
+
+# The shared ACR that AKS clusters pull from (via attachAcr managed identity).
+# This is separate from the GHCR registries in docker.yml.
+env:
+  ACR_NAME: ${{ vars.AKS_ACR_NAME }}
+  ACR_LOGIN_SERVER: ${{ vars.AKS_ACR_NAME }}.azurecr.io
+
+jobs:
+  # ────────────────────────────────────────────
+  # Step 0: Detect what changed (push trigger)
+  # ────────────────────────────────────────────
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      merlin_changed: ${{ steps.changes.outputs.merlin_changed }}
+      apps_matrix: ${{ steps.changes.outputs.apps_matrix }}
+      has_apps: ${{ steps.changes.outputs.has_apps }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changes
+        id: changes
+        run: |
+          DOCKER_APPS=("gateway" "dashboard")
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Manual trigger — use inputs directly
+            echo "merlin_changed=${{ inputs.deploy_resources }}" >> $GITHUB_OUTPUT
+
+            if [[ "${{ inputs.build_images }}" == "true" || "${{ inputs.update_deployments }}" == "true" ]]; then
+              if [[ "${{ inputs.apps }}" == "all" ]]; then
+                APPS_JSON=$(printf '%s\n' "${DOCKER_APPS[@]}" | jq -R . | jq -s -c .)
+              else
+                IFS=',' read -ra INPUT_APPS <<< "${{ inputs.apps }}"
+                VALID=()
+                for app in "${INPUT_APPS[@]}"; do
+                  app="${app// /}"
+                  for valid in "${DOCKER_APPS[@]}"; do
+                    [[ "$app" == "$valid" ]] && VALID+=("$app") && break
+                  done
+                done
+                APPS_JSON=$(printf '%s\n' "${VALID[@]}" | jq -R . | jq -s -c .)
+              fi
+              echo "apps_matrix=$APPS_JSON" >> $GITHUB_OUTPUT
+              echo "has_apps=true" >> $GITHUB_OUTPUT
+            else
+              echo "apps_matrix=[]" >> $GITHUB_OUTPUT
+              echo "has_apps=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Push trigger — auto-detect from changed files
+            CHANGED=$(git diff --name-only HEAD~1 HEAD)
+
+            # Merlin resources are never auto-deployed on push — manual only
+            echo "merlin_changed=false" >> $GITHUB_OUTPUT
+
+            # Check which apps changed
+            APPS=()
+            for app in "${DOCKER_APPS[@]}"; do
+              if echo "$CHANGED" | grep -q "^apps/$app/"; then
+                APPS+=("$app")
+                echo "App '$app' changed (direct)"
+                continue
+              fi
+            done
+
+            # If packages/ or pnpm-lock.yaml changed, rebuild all apps
+            if echo "$CHANGED" | grep -qE '^(packages/|pnpm-lock.yaml)'; then
+              for app in "${DOCKER_APPS[@]}"; do
+                if [[ ! " ${APPS[*]} " =~ " $app " ]]; then
+                  APPS+=("$app")
+                  echo "App '$app' added (shared packages changed)"
+                fi
+              done
+            fi
+
+            APPS_JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
+            echo "apps_matrix=$APPS_JSON" >> $GITHUB_OUTPUT
+
+            if [[ "${#APPS[@]}" -gt 0 ]]; then
+              echo "has_apps=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_apps=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Plan summary
+        run: |
+          echo "### AKS Deploy Plan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Merlin resources:** ${{ steps.changes.outputs.merlin_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Apps to build:** \`${{ steps.changes.outputs.apps_matrix }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR:** \`${{ env.ACR_LOGIN_SERVER }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ────────────────────────────────────────────
+  # Step 1: Deploy merlin resource changes
+  # ────────────────────────────────────────────
+  deploy-resources:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.merlin_changed == 'true'
+    runs-on: ubuntu-latest
+    environment: nightly
+
+    env:
+      RING: ${{ inputs.ring || 'test' }}
+      REGION: ${{ inputs.region || 'koreacentral' }}
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install Merlin CLI
+        run: npm install -g @thedeltalab/merlin
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AKS_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve AKS cluster
+        id: aks
+        run: |
+          case "${{ env.RING }}" in
+            staging) RING_SHORT="stg" ;;
+            test)    RING_SHORT="tst" ;;
+            *)       RING_SHORT="${{ env.RING }}" ;;
+          esac
+          case "${{ env.REGION }}" in
+            koreacentral) REGION_SHORT="krc" ;;
+            eastasia)     REGION_SHORT="eas" ;;
+            eastus)       REGION_SHORT="eus" ;;
+            westus)       REGION_SHORT="wus" ;;
+            *)            REGION_SHORT="${{ env.REGION }}" ;;
+          esac
+          echo "cluster=shared-aks-${RING_SHORT}-${REGION_SHORT}-aks" >> $GITHUB_OUTPUT
+          echo "resource_group=shared-rg-${RING_SHORT}-${REGION_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --name "${{ steps.aks.outputs.cluster }}" \
+            --resource-group "${{ steps.aks.outputs.resource_group }}" \
+            --overwrite-existing
+
+      - name: Run Merlin deploy
+        run: |
+          echo "Deploying K8s resources (ring: ${{ env.RING }}, region: ${{ env.REGION }})"
+          merlin deploy ./merlin-resources \
+            --no-shared \
+            --execute \
+            --ring ${{ env.RING }} \
+            --region ${{ env.REGION }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Merlin Resource Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Ring:** \`${{ env.RING }}\`  **Region:** \`${{ env.REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**AKS:** \`${{ steps.aks.outputs.cluster }}\`" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "**Status:** Success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  # ────────────────────────────────────────────
+  # Step 2: Build Docker images and push to ACR
+  # Tags: nightly-<sha> (unique per commit) + nightly (floating latest).
+  # The unique tag is used by update-deployments to trigger K8s rollout.
+  # ────────────────────────────────────────────
+  build-images:
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.has_apps == 'true' &&
+      (github.event_name == 'push' || inputs.build_images == true)
+    runs-on: ubuntu-latest
+    environment: nightly
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.detect-changes.outputs.apps_matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AKS_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.AKS_ACR_USERNAME }}
+          password: ${{ secrets.AKS_ACR_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      - name: Determine version metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG="nightly-${SHORT_SHA}"
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Extract Docker metadata
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_LOGIN_SERVER }}/synapse/${{ matrix.app }}
+          tags: |
+            type=raw,value=nightly
+            type=raw,value=${{ steps.meta.outputs.image_tag }}
+            type=raw,value=nightly-${{ github.ref_name }},enable=${{ github.ref_name != 'main' }}
+          labels: |
+            org.opencontainers.image.title=Synapse ${{ matrix.app }}
+            org.opencontainers.image.vendor=Synapse
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/synapse/${{ matrix.app }}:buildcache
+          cache-to: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/synapse/${{ matrix.app }}:buildcache,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VERSION=${{ steps.meta.outputs.image_tag }}
+          platforms: linux/amd64
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Docker Build: ${{ matrix.app }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR:** \`${{ env.ACR_LOGIN_SERVER }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.docker-meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  # ────────────────────────────────────────────
+  # Step 3: Update K8s Deployments to pull new images
+  # Uses the unique nightly-<sha> tag from build-images. K8s detects the tag
+  # change and triggers a rolling update automatically.
+  # ────────────────────────────────────────────
+  update-deployments:
+    needs: [detect-changes, build-images, deploy-resources]
+    # Run if:
+    # - Images were built (push or manual with build_images), OR
+    # - Manual trigger with update_deployments only (skip build, just restart pods)
+    # Always wait for build-images if it ran; tolerate skip/success.
+    if: >-
+      always() &&
+      needs.detect-changes.outputs.has_apps == 'true' &&
+      needs.deploy-resources.result != 'failure' &&
+      (needs.build-images.result == 'success' || inputs.update_deployments == true) &&
+      needs.build-images.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: nightly
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.detect-changes.outputs.apps_matrix) }}
+
+    env:
+      RING: ${{ inputs.ring || 'test' }}
+      REGION: ${{ inputs.region || 'koreacentral' }}
+
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AKS_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve AKS cluster
+        id: aks
+        run: |
+          case "${{ env.RING }}" in
+            staging) RING_SHORT="stg" ;;
+            test)    RING_SHORT="tst" ;;
+            *)       RING_SHORT="${{ env.RING }}" ;;
+          esac
+          case "${{ env.REGION }}" in
+            koreacentral) REGION_SHORT="krc" ;;
+            eastasia)     REGION_SHORT="eas" ;;
+            eastus)       REGION_SHORT="eus" ;;
+            westus)       REGION_SHORT="wus" ;;
+            *)            REGION_SHORT="${{ env.REGION }}" ;;
+          esac
+          echo "cluster=shared-aks-${RING_SHORT}-${REGION_SHORT}-aks" >> $GITHUB_OUTPUT
+          echo "resource_group=shared-rg-${RING_SHORT}-${REGION_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --name "${{ steps.aks.outputs.cluster }}" \
+            --resource-group "${{ steps.aks.outputs.resource_group }}" \
+            --overwrite-existing
+
+      - name: Determine image tag
+        id: image
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG="nightly-${SHORT_SHA}"
+          IMAGE_URI="${{ env.ACR_LOGIN_SERVER }}/synapse/${{ matrix.app }}:${IMAGE_TAG}"
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Update deployment image
+        run: |
+          NAMESPACE="synapse"
+          DEPLOYMENT="synapse-${{ matrix.app }}"
+
+          # Get the actual container name from the deployment spec
+          CONTAINER=$(kubectl get deployment/$DEPLOYMENT -n $NAMESPACE \
+            -o jsonpath='{.spec.template.spec.containers[0].name}')
+
+          echo "Updating $DEPLOYMENT (container: $CONTAINER) to ${{ steps.image.outputs.uri }}"
+
+          # Set the exact image tag — K8s detects the tag change and triggers rolling update
+          kubectl set image deployment/$DEPLOYMENT \
+            $CONTAINER=${{ steps.image.outputs.uri }} \
+            -n $NAMESPACE
+
+          # Wait for rollout to complete (timeout 5 minutes)
+          echo "Waiting for rollout..."
+          kubectl rollout status deployment/$DEPLOYMENT \
+            -n $NAMESPACE \
+            --timeout=300s
+
+      - name: Health check
+        run: |
+          NAMESPACE="synapse"
+          DEPLOYMENT="synapse-${{ matrix.app }}"
+
+          echo "Checking pod health for $DEPLOYMENT..."
+
+          kubectl wait --for=condition=ready pod \
+            -l app=$DEPLOYMENT \
+            -n $NAMESPACE \
+            --timeout=120s || echo "Warning: Some pods not ready yet"
+
+          kubectl get pods -l app=$DEPLOYMENT -n $NAMESPACE
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Deployment Update: ${{ matrix.app }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment:** \`synapse-${{ matrix.app }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ steps.image.outputs.uri }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Ring:** \`${{ env.RING }}\`  **Region:** \`${{ env.REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "**Status:** Rolled out successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** Rollout failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  # ────────────────────────────────────────────
+  # Summary
+  # ────────────────────────────────────────────
+  summary:
+    needs: [detect-changes, deploy-resources, build-images, update-deployments]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Final summary
+        run: |
+          echo "### AKS Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR:** \`${{ env.ACR_LOGIN_SERVER }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          RESOURCES="${{ needs.deploy-resources.result }}"
+          BUILD="${{ needs.build-images.result }}"
+          UPDATE="${{ needs.update-deployments.result }}"
+
+          case "$RESOURCES" in
+            success)  echo "| Merlin Resources | Deployed |" >> $GITHUB_STEP_SUMMARY ;;
+            failure)  echo "| Merlin Resources | Failed |" >> $GITHUB_STEP_SUMMARY ;;
+            skipped)  echo "| Merlin Resources | Skipped |" >> $GITHUB_STEP_SUMMARY ;;
+          esac
+
+          case "$BUILD" in
+            success)  echo "| Docker Build | Pushed |" >> $GITHUB_STEP_SUMMARY ;;
+            failure)  echo "| Docker Build | Failed |" >> $GITHUB_STEP_SUMMARY ;;
+            skipped)  echo "| Docker Build | Skipped |" >> $GITHUB_STEP_SUMMARY ;;
+          esac
+
+          case "$UPDATE" in
+            success)  echo "| K8s Rollout | Updated |" >> $GITHUB_STEP_SUMMARY ;;
+            failure)  echo "| K8s Rollout | Failed |" >> $GITHUB_STEP_SUMMARY ;;
+            skipped)  echo "| K8s Rollout | Skipped |" >> $GITHUB_STEP_SUMMARY ;;
+          esac
