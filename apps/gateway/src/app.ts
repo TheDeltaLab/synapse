@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { authMiddleware } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { loggerMiddleware } from './middleware/logger.js';
+import { traceMiddleware } from './middleware/trace.js';
 import { admin } from './routes/admin.js';
 import { handleProxy } from './routes/proxy.js';
 import { redisService } from './services/redis-service.js';
@@ -10,6 +11,7 @@ import { redisService } from './services/redis-service.js';
 const app = new Hono();
 
 // Global middleware
+app.use('*', traceMiddleware);
 app.use('*', loggerMiddleware);
 app.use('*', cors({
     origin: '*',
