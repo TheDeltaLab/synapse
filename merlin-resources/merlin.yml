@@ -1,0 +1,6 @@
+project: synapse
+ring:
+  - test
+  - staging
+region:
+  - koreacentral

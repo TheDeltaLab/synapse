@@ -115,12 +115,27 @@ class DeepSeekProvider extends Provider<'deepseek'> {
     }
 }
 
+class AlibabaProvider extends Provider<'alibaba'> {
+    constructor() {
+        super({
+            id: 'alibaba',
+            name: 'Alibaba',
+            baseUrl: envOrDefault('ALIBABA_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode'),
+        });
+    }
+
+    getApiKey(): string {
+        return process.env.ALIBABA_API_KEY?.trim() ?? '';
+    }
+}
+
 export const providers = [
     new OpenAIProvider(),
     new AnthropicProvider(),
     new GoogleProvider(),
     new OpenRouterProvider(),
     new DeepSeekProvider(),
+    new AlibabaProvider(),
 ] as const satisfies readonly Provider[];
 
 export type ProviderName = (typeof providers)[number]['id'];
@@ -178,6 +193,13 @@ export const deployments = [
         providerId: 'deepseek',
         modelId: 'deepseek-reasoner',
         task: 'chat',
+    },
+    {
+        id: 'alibaba:text-embedding-v4:embedding',
+        providerId: 'alibaba',
+        modelId: 'text-embedding-v4',
+        task: 'embedding',
+        isDefault: true,
     },
 ] as const satisfies readonly Deployment[];
 
