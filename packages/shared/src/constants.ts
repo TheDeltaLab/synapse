@@ -8,6 +8,9 @@ export const SUPPORTED_PROVIDERS = [
 
 export type Provider = typeof SUPPORTED_PROVIDERS[number];
 
+// Service names
+export const GATEWAY_SERVICE_NAME = 'synapse-gateway';
+
 // Default rate limits
 export const DEFAULT_RATE_LIMIT = 1000; // requests per hour
 export const DEFAULT_CACHE_TTL = 3600; // 1 hour in seconds

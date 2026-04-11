@@ -1,5 +1,6 @@
 import { startOtelSdk } from '@synapse/observability/nodeSdk';
-startOtelSdk({ serviceName: 'synapse-gateway', enableConsolePatch: true });
+import { GATEWAY_SERVICE_NAME } from '@synapse/shared';
+startOtelSdk({ serviceName: GATEWAY_SERVICE_NAME, enableConsolePatch: true });
 
 import 'dotenv/config';
 // eslint-disable-next-line import/order

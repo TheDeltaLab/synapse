@@ -1,12 +1,13 @@
 import { context, propagation, trace, SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import type { Context, Next } from 'hono';
+import { GATEWAY_SERVICE_NAME } from '@synapse/shared';
 
 /**
  * Hono middleware that creates a server span per request,
  * propagating the incoming W3C traceparent / tracestate headers.
  */
 export async function traceMiddleware(c: Context, next: Next) {
-    const tracer = trace.getTracer('synapse-gateway');
+    const tracer = trace.getTracer(GATEWAY_SERVICE_NAME);
     const method = c.req.method;
     const path = c.req.path;
 
