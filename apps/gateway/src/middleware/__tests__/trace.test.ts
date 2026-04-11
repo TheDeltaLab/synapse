@@ -10,6 +10,11 @@ function createMockSpan() {
         setStatus: vi.fn(),
         recordException: vi.fn(),
         end: vi.fn(),
+        spanContext: vi.fn(() => ({
+            traceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0',
+            spanId: 'bbbbbbbbbbbbbb00',
+            traceFlags: 1,
+        })),
     };
 }
 
