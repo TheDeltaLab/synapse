@@ -1,4 +1,8 @@
+import { startOtelSdk } from '@synapse/observability/nodeSdk';
+startOtelSdk({ serviceName: 'synapse-gateway', enableConsolePatch: true });
+
 import 'dotenv/config';
+// eslint-disable-next-line import/order
 import { serve } from '@hono/node-server';
 import app from './app.js';
 import { providers, getChatDeployments, getEmbeddingDeployments } from './config/providers.js';
