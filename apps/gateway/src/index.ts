@@ -1,6 +1,4 @@
 import 'dotenv/config';
-// Initialize OTel BEFORE other imports so auto-instrumentation can patch HTTP
-import './instrumentation.js';
 import { serve } from '@hono/node-server';
 import app from './app.js';
 import { providers, getChatDeployments, getEmbeddingDeployments } from './config/providers.js';
