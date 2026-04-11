@@ -9,6 +9,7 @@ const providerStyleMap: Record<string, ResponseStyle> = {
     openai: 'openai',
     openrouter: 'openai',
     deepseek: 'openai',
+    alibaba: 'openai',
     anthropic: 'anthropic',
     google: 'google',
 };

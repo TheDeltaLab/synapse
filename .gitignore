@@ -44,3 +44,5 @@ packages/dal/generated/
 .turbo/
 
 plans/
+
+.merlin/

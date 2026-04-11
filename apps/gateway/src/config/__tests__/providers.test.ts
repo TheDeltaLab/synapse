@@ -17,6 +17,7 @@ import {
 const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 const originalDeepSeekApiKey = process.env.DEEPSEEK_API_KEY;
 const originalGoogleApiKey = process.env.GOOGLE_API_KEY;
+const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
 
 afterEach(() => {
     if (originalOpenRouterApiKey === undefined) {
@@ -36,6 +37,12 @@ afterEach(() => {
     } else {
         process.env.GOOGLE_API_KEY = originalGoogleApiKey;
     }
+
+    if (originalAlibabaApiKey === undefined) {
+        delete process.env.ALIBABA_API_KEY;
+    } else {
+        process.env.ALIBABA_API_KEY = originalAlibabaApiKey;
+    }
 });
 
 describe('providers config', () => {
@@ -46,6 +53,7 @@ describe('providers config', () => {
             'google',
             'openrouter',
             'deepseek',
+            'alibaba',
         ]);
     });
 
@@ -55,6 +63,7 @@ describe('providers config', () => {
         expect(getProvider('google')?.constructor.name).toBe('GoogleProvider');
         expect(getProvider('openrouter')?.constructor.name).toBe('OpenRouterProvider');
         expect(getProvider('deepseek')?.constructor.name).toBe('DeepSeekProvider');
+        expect(getProvider('alibaba')?.constructor.name).toBe('AlibabaProvider');
     });
 
     it('reads provider API keys through env-backed methods', () => {
@@ -89,6 +98,7 @@ describe('providers config', () => {
         const google = getProvider('google')!;
         const openrouter = getProvider('openrouter')!;
         const deepseek = getProvider('deepseek')!;
+        const alibaba = getProvider('alibaba')!;
 
         if (!process.env.OPENAI_BASE_URL) {
             expect(openai.baseUrl).toBe('https://api.openai.com');
@@ -105,6 +115,9 @@ describe('providers config', () => {
         if (!process.env.DEEPSEEK_BASE_URL) {
             expect(deepseek.baseUrl).toBe('https://api.deepseek.com');
         }
+        if (!process.env.ALIBABA_BASE_URL) {
+            expect(alibaba.baseUrl).toBe('https://dashscope.aliyuncs.com/compatible-mode');
+        }
 
         // All providers must have a non-empty baseUrl regardless
         expect(openai.baseUrl.length).toBeGreaterThan(0);
@@ -112,6 +125,7 @@ describe('providers config', () => {
         expect(google.baseUrl.length).toBeGreaterThan(0);
         expect(openrouter.baseUrl.length).toBeGreaterThan(0);
         expect(deepseek.baseUrl.length).toBeGreaterThan(0);
+        expect(alibaba.baseUrl.length).toBeGreaterThan(0);
     });
 
     it('returns Bearer auth headers by default', () => {
@@ -151,6 +165,14 @@ describe('providers config', () => {
         expect(deployment?.modelId).toBe('qwen/qwen3-embedding-8b');
     });
 
+    it('declares Alibaba text-embedding-v4 deployment', () => {
+        const deployment = getDeployment('alibaba', 'text-embedding-v4', 'embedding');
+
+        expect(deployment).toBeDefined();
+        expect(deployment?.modelId).toBe('text-embedding-v4');
+        expect(deployment?.isDefault).toBe(true);
+    });
+
     it('declares DeepSeek chat deployment with upstream model name', () => {
         const deployment = getDeployment('deepseek', 'deepseek-chat', 'chat');
 
@@ -185,6 +207,9 @@ describe('providers config', () => {
         expect(getEmbeddingDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
             'qwen/qwen3-embedding-8b',
         ]);
+        expect(getEmbeddingDeployments('alibaba').map(deployment => deployment.modelId)).toEqual([
+            'text-embedding-v4',
+        ]);
         expect(getEmbeddingDeployments('anthropic')).toEqual([]);
         expect(getEmbeddingDeployments('deepseek')).toEqual([]);
     });
@@ -196,6 +221,7 @@ describe('providers config', () => {
         expect(getDefaultChatModel('openrouter')).toBe('gpt-5-mini');
         expect(getDefaultChatModel('deepseek')).toBe('deepseek-chat');
         expect(getDefaultEmbeddingModel('openrouter')).toBe('qwen/qwen3-embedding-8b');
+        expect(getDefaultEmbeddingModel('alibaba')).toBe('text-embedding-v4');
         expect(getDefaultEmbeddingModel('anthropic')).toBeNull();
         expect(getDefaultEmbeddingModel('deepseek')).toBeNull();
     });
@@ -249,6 +275,11 @@ describe('providers config', () => {
             expect(hasEmbeddingSupport('openrouter')).toBe(true);
         });
 
+        it('returns true for alibaba with API key', () => {
+            process.env.ALIBABA_API_KEY = 'test-key';
+            expect(hasEmbeddingSupport('alibaba')).toBe(true);
+        });
+
         it('returns false for providers without embedding deployments', () => {
             process.env.DEEPSEEK_API_KEY = 'test-key';
             expect(hasEmbeddingSupport('deepseek')).toBe(false);
@@ -263,8 +294,9 @@ describe('providers config', () => {
         it('returns only providers with both embedding support and API keys', () => {
             process.env.OPENROUTER_API_KEY = 'test-key';
             process.env.DEEPSEEK_API_KEY = 'test-key';
+            process.env.ALIBABA_API_KEY = 'test-key';
 
-            expect(getAvailableEmbeddingProviders()).toEqual(['openrouter']);
+            expect(getAvailableEmbeddingProviders()).toEqual(['openrouter', 'alibaba']);
         });
     });
 });
