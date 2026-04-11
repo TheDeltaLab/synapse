@@ -63,6 +63,7 @@ jobs:
               - 'packages/shared/**'
               - 'packages/dal/**'
               - 'packages/config/**'
+              - 'packages/observability/**'
               - 'pnpm-lock.yaml'
               - 'apps/gateway/Dockerfile'
             dashboard:

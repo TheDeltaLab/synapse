@@ -5,8 +5,8 @@
   "description": "AI Gateway Monorepo - Unified LLM provider access with caching and retry logic",
   "packageManager": "pnpm@10.28.1",
   "scripts": {
-    "dev": "set -a; [ -f .env ] && . ./.env; set +a; pnpm --parallel --filter gateway --filter @synapse/dashboard dev",
-    "dev-mock": "set -a; [ -f .env ] && . ./.env; set +a; concurrently -k -n mock,gateway,dashboard -c blue,green,yellow \"pnpm --filter @synapse/mock... dev\" \"sleep 2 && pnpm --filter gateway dev\" \"sleep 2 && pnpm --filter @synapse/dashboard dev\"",
+    "dev": "set -a; [ -f .env ] && . ./.env; set +a; pnpm --recursive --filter './packages/*' --if-present build && pnpm --parallel --filter gateway --filter @synapse/dashboard dev",
+    "dev-mock": "set -a; [ -f .env ] && . ./.env; set +a; pnpm --recursive --filter './packages/*' --if-present build && concurrently -k -n mock,gateway,dashboard -c blue,green,yellow \"pnpm --filter @synapse/mock... dev\" \"sleep 2 && pnpm --filter gateway dev\" \"sleep 2 && pnpm --filter @synapse/dashboard dev\"",
     "build": "pnpm --recursive --filter \"./packages/*\" --if-present build && pnpm --filter \"./apps/*\" build",
     "test": "pnpm --recursive --filter \"./packages/*\" --if-present build && pnpm --recursive --if-present test",
     "lint": "pnpm --recursive lint",
@@ -30,10 +30,11 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "bcrypt",
       "@prisma/engines",
+      "bcrypt",
       "esbuild",
-      "prisma"
+      "prisma",
+      "sharp"
     ]
   }
 }
