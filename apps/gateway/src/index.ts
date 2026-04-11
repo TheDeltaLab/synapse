@@ -1,10 +1,9 @@
+import 'dotenv/config';
+import { serve } from '@hono/node-server';
 import { startOtelSdk } from '@synapse/observability/nodeSdk';
 import { GATEWAY_SERVICE_NAME } from '@synapse/shared';
 startOtelSdk({ serviceName: GATEWAY_SERVICE_NAME, enableConsolePatch: true });
 
-import 'dotenv/config';
-// eslint-disable-next-line import/order
-import { serve } from '@hono/node-server';
 import app from './app.js';
 import { providers, getChatDeployments, getEmbeddingDeployments } from './config/providers.js';
 import { redisService } from './services/redis-service.js';
