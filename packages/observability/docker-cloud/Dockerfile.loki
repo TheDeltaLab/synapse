@@ -1,0 +1,10 @@
+# Extract Loki binary from official image
+FROM --platform=linux/amd64 grafana/loki:3.4.2 AS loki
+
+# Use Alpine as base for shell access (sh + bash, apk package manager)
+FROM --platform=linux/amd64 alpine:3.21
+RUN apk add --no-cache bash ca-certificates
+COPY --from=loki /usr/bin/loki /usr/bin/loki
+COPY loki-config.yaml /etc/loki/local-config.yaml
+ENTRYPOINT ["/usr/bin/loki"]
+CMD ["-config.file=/etc/loki/local-config.yaml", "-config.expand-env=true"]

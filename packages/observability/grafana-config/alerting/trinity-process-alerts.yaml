@@ -1,0 +1,172 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Trinity Process Errors
+    folder: Trinity
+    interval: 1m
+    rules:
+      # 1. uncaughtException detected — any service, any occurrence
+      - uid: process-uncaught-exception
+        title: "Process: Uncaught Exception Detected"
+        condition: count_threshold
+        data:
+          - refId: exception_count
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >
+                count_over_time({job=~"web|admin|home|worker|lance|lance-worker"}
+                  |= `[uncaughtException]` [5m])
+              instant: true
+              refId: exception_count
+          - refId: count_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: exception_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          __dashboardUid__: trinity-process-errors
+          summary: "uncaughtException detected in {{ $labels.job }}"
+          description: >
+            A process-level uncaught exception was detected. The process state is
+            potentially corrupted and a restart should follow automatically.
+            Check Loki logs with: {job="{{ $labels.job }}"} |= `[uncaughtException]`
+        labels:
+          severity: critical
+          category: process-error
+
+      # 2. unhandledRejection detected — warning threshold (> 5 in 5 min)
+      - uid: process-unhandled-rejection
+        title: "Process: Unhandled Promise Rejections"
+        condition: count_threshold
+        data:
+          - refId: rejection_count
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >
+                sum(count_over_time({job=~"web|admin|home|worker|lance|lance-worker"}
+                  |= `[unhandledRejection]` [5m]))
+              instant: true
+              refId: rejection_count
+          - refId: count_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: rejection_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          __dashboardUid__: trinity-process-errors
+          summary: "{{ $values.rejection_count }} unhandled promise rejections in 5min"
+          description: >
+            Multiple unhandled promise rejections detected. This usually indicates
+            missing .catch() or await on async operations. Does not crash the process
+            but may cause data loss or silent failures.
+            Check Loki logs with: {job=~".+"} |= `[unhandledRejection]`
+        labels:
+          severity: warning
+          category: process-error
+
+      # 3. onRequestError detected — Next.js unhandled route errors (> 3 in 5 min)
+      - uid: nextjs-request-error
+        title: "Next.js: Unhandled Route Errors"
+        condition: count_threshold
+        data:
+          - refId: error_count
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >
+                sum(count_over_time({job=~"web|admin|home"}
+                  |= `[onRequestError]` [5m]))
+              instant: true
+              refId: error_count
+          - refId: count_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: error_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [3]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          __dashboardUid__: trinity-process-errors
+          summary: "{{ $values.error_count }} unhandled Next.js route errors in 5min"
+          description: >
+            Multiple route handler exceptions escaped without try-catch in Next.js apps.
+            Users see 500 errors. Each occurrence is logged with path, method, and stack trace.
+            Check Loki logs with: {job=~"web|admin|home"} |= `[onRequestError]`
+        labels:
+          severity: warning
+          category: request-error
+
+      # 4. OTel collector unreachable on startup
+      - uid: otel-collector-unreachable
+        title: "OTel: Collector Unreachable on Startup"
+        condition: count_threshold
+        data:
+          - refId: unreachable_count
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >
+                count_over_time({job=~"web|admin|home|worker|lance|lance-worker"}
+                  |= `Cannot reach collector` [5m])
+              instant: true
+              refId: unreachable_count
+          - refId: count_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: unreachable_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          __dashboardUid__: trinity-process-errors
+          summary: "OTel collector unreachable for {{ $labels.job }}"
+          description: >
+            A service failed to reach the OTel collector on startup. Traces, metrics,
+            and logs may not be exported. Verify OTEL_EXPORTER_OTLP_ENDPOINT is correct
+            and the collector is running.
+        labels:
+          severity: warning
+          category: observability

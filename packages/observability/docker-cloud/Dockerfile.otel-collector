@@ -1,0 +1,10 @@
+# Extract collector binary from official image
+FROM --platform=linux/amd64 otel/opentelemetry-collector-contrib:0.120.0 AS collector
+
+# Use Alpine as base for shell access (sh + bash, apk package manager)
+FROM --platform=linux/amd64 alpine:3.21
+RUN apk add --no-cache bash ca-certificates
+COPY --from=collector /otelcol-contrib /otelcol-contrib
+COPY otel-collector-config.yaml /etc/otelcol-contrib/config.yaml
+ENTRYPOINT ["/otelcol-contrib"]
+CMD ["--config", "/etc/otelcol-contrib/config.yaml"]

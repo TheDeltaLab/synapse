@@ -17,6 +17,8 @@ export async function traceMiddleware(c: Context, next: Next) {
     });
 
     const extractedContext = propagation.extract(context.active(), headersCarrier);
+    console.log('headersCarrier', headersCarrier);
+    console.log(`Extracted trace context for ${method} ${path}:`, extractedContext);
     return tracer.startActiveSpan(
         `${method} ${path}`,
         { kind: SpanKind.SERVER },
@@ -42,6 +44,7 @@ export async function traceMiddleware(c: Context, next: Next) {
                 }
                 throw error;
             } finally {
+                console.log(`Ending span for ${method} ${path}`);
                 span.end();
             }
         },

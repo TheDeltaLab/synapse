@@ -30,6 +30,7 @@
     "@redis/entraid": "^5.11.0",
     "@synapse/dal": "workspace:*",
     "@synapse/shared": "workspace:*",
+    "@synapse/observability": "workspace:*",
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.7",
     "hono": "catalog:",

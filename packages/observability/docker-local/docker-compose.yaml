@@ -1,0 +1,50 @@
+name: trinity-observability
+
+services:
+  loki:
+    image: grafana/loki:3.4.2
+    ports:
+      - "3031:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    ports:
+      - "3032:3200"
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo/config.yaml
+    command: -config.file=/etc/tempo/config.yaml
+
+  mimir:
+    image: grafana/mimir:2.15.0
+    ports:
+      - "3035:8080"
+    volumes:
+      - ./mimir-config.yaml:/etc/mimir/config.yaml
+    command: -config.file=/etc/mimir/config.yaml
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    ports:
+      - "3033:4317"   # gRPC
+      - "3034:4318"   # HTTP
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+
+  grafana:
+    image: grafana/grafana:12.4.2
+    ports:
+      - "3030:3000"
+    volumes:
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ../grafana-config/dashboards/:/etc/grafana/provisioning/dashboards/json/
+      - ../grafana-config/alerting/alerting.yaml:/etc/grafana/provisioning/alerting/contactpoints.yaml
+      - ../grafana-config/alerting/trinity-native-alerts.yaml:/etc/grafana/provisioning/alerting/trinity-native-alerts.yaml
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_UNIFIED_ALERTING_ENABLED=true
+      - GF_SERVER_ROOT_URL=http://localhost:3030

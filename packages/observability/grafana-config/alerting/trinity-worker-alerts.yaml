@@ -1,0 +1,159 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Trinity Worker
+    folder: Trinity
+    interval: 1m
+    rules:
+      # 1. Job failure rate > 10% over 5 min
+      - uid: worker-job-failure-rate
+        title: "Worker: Job Failure Rate > 10%"
+        condition: failure_rate_threshold
+        data:
+          - refId: failure_rate
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                100 * sum(rate(worker_job_count_total{status="failed"}[5m]))
+                / clamp_min(sum(rate(worker_job_count_total[5m])), 0.001)
+              instant: true
+              refId: failure_rate
+          - refId: failure_rate_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: failure_rate
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-worker
+          summary: "Worker job failure rate is {{ $values.failure_rate }}% (threshold: 10%)"
+          description: "More than 10% of background jobs are failing. Check job logs for error details."
+        labels:
+          severity: warning
+          app: worker
+          category: job
+
+      # 2. Job failure rate critical > 30%
+      - uid: worker-job-failure-critical
+        title: "Worker: Job Failure Rate Critical"
+        condition: failure_rate_threshold
+        data:
+          - refId: failure_rate
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                100 * sum(rate(worker_job_count_total{status="failed"}[5m]))
+                / clamp_min(sum(rate(worker_job_count_total[5m])), 0.001)
+              instant: true
+              refId: failure_rate
+          - refId: failure_rate_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: failure_rate
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          __dashboardUid__: trinity-worker
+          summary: "CRITICAL: Worker job failure rate is {{ $values.failure_rate }}% (threshold: 30%)"
+          description: "Job failure rate is critically high. Immediate attention required."
+        labels:
+          severity: critical
+          app: worker
+          category: job
+
+      # 3. Job P95 duration > 60s
+      - uid: worker-job-duration-high
+        title: "Worker: Job P95 Duration > 60s"
+        condition: duration_threshold
+        data:
+          - refId: duration_p95
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: histogram_quantile(0.95, sum by (le) (rate(worker_job_duration_bucket[5m])))
+              instant: true
+              refId: duration_p95
+          - refId: duration_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: duration_p95
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [60000]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-worker
+          summary: "Worker job P95 duration is {{ $values.duration_p95 }}ms (threshold: 60000ms)"
+          description: "Background jobs are taking unusually long. Check for resource contention or external service issues."
+        labels:
+          severity: warning
+          app: worker
+          category: latency
+
+      # 4. Queue wait time P95 > 30s
+      - uid: worker-queue-wait-high
+        title: "Worker: Queue Wait Time P95 > 30s"
+        condition: wait_threshold
+        data:
+          - refId: wait_p95
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: histogram_quantile(0.95, sum by (le) (rate(worker_job_queue_wait_time_bucket[5m])))
+              instant: true
+              refId: wait_p95
+          - refId: wait_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: wait_p95
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30000]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-worker
+          summary: "Worker queue wait P95 is {{ $values.wait_p95 }}ms (threshold: 30000ms)"
+          description: "Jobs are waiting too long in the queue. Consider scaling workers or checking for stuck jobs."
+        labels:
+          severity: warning
+          app: worker
+          category: queue

@@ -1,3 +1,7 @@
+// eslint-disable-next-line import/order
+import { startOtelSdk } from '@synapse/observability/nodeSdk';
+
+startOtelSdk({ serviceName: 'synapse-gateway', enableConsolePatch: true });
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authMiddleware } from './middleware/auth.js';

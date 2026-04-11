@@ -1,0 +1,137 @@
+apiVersion: 1
+
+# Message Templates - Feishu card format
+templates:
+  - orgId: 1
+    name: feishu-card
+    template: |
+      {{ define "feishu-card" }}
+      {
+        "msg_type": "interactive",
+        "card": {
+          "header": {
+            "title": {
+              "tag": "plain_text",
+              "content": "{{ if eq .Status `firing` }}🔴 Grafana Alert Firing{{ else }}✅ Grafana Alert Resolved{{ end }}"
+            },
+            "template": "{{ if eq .Status `firing` }}red{{ else }}green{{ end }}"
+          },
+          "elements": [
+            {{- $first := true }}
+            {{- range .Alerts }}
+            {{- if not $first }},{{ end }}
+            {{- $first = false }}
+            {
+              "tag": "div",
+              "fields": [
+                {
+                  "is_short": false,
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**{{ .Labels.alertname }}**"
+                  }
+                },
+                {
+                  "is_short": true,
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**Severity:** {{ .Labels.severity }}"
+                  }
+                },
+                {
+                  "is_short": true,
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**Status:** {{ .Status }}"
+                  }
+                },
+                {
+                  "is_short": false,
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}(no summary){{ end }}"
+                  }
+                }
+              ]
+            }
+            {{- end }},
+            {
+              "tag": "hr"
+            },
+            {
+              "tag": "action",
+              "actions": [
+                {{- $alert := index .Alerts 0 }}
+                {
+                  "tag": "button",
+                  "text": {
+                    "tag": "plain_text",
+                    "content": "📊 View Panel"
+                  },
+                  "url": "{{ if $alert.DashboardURL }}{{ $alert.DashboardURL }}{{ else }}{{ .ExternalURL }}alerting/list{{ end }}",
+                  "type": "primary"
+                },
+                {
+                  "tag": "button",
+                  "text": {
+                    "tag": "plain_text",
+                    "content": "🔔 View Alert Rule"
+                  },
+                  "url": "{{ if $alert.GeneratorURL }}{{ $alert.GeneratorURL }}{{ else }}{{ .ExternalURL }}alerting/list{{ end }}",
+                  "type": "default"
+                }
+              ]
+            },
+            {
+              "tag": "note",
+              "elements": [
+                {
+                  "tag": "plain_text",
+                  "content": "Grafana Alerting · {{ if .CommonLabels.grafana_folder }}{{ .CommonLabels.grafana_folder }}{{ else }}Trinity{{ end }}{{ if .CommonLabels.app }} · {{ .CommonLabels.app }}{{ end }}"
+                }
+              ]
+            }
+          ]
+        }
+      }
+      {{ end }}
+
+# Contact Points - Feishu webhook with card template
+contactPoints:
+  - orgId: 1
+    name: trinity-feishu
+    receivers:
+      - uid: trinity-feishu-receiver
+        type: webhook
+        settings:
+          url: https://open.feishu.cn/open-apis/bot/v2/hook/094bdde4-7b07-4539-ad5c-d612b7890219
+          httpMethod: POST
+          payload:
+            template: '{{ template "feishu-card" . }}'
+        disableResolveMessage: false
+
+# Notification Policies - routing rules
+policies:
+  - orgId: 1
+    receiver: trinity-feishu
+    group_by:
+      - grafana_folder
+      - alertname
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: trinity-feishu
+        matchers:
+          - severity=critical
+        group_wait: 10s
+        group_interval: 1m
+        repeat_interval: 1h
+        continue: false
+      - receiver: trinity-feishu
+        matchers:
+          - severity=warning
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        continue: false

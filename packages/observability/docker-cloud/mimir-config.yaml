@@ -1,0 +1,50 @@
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 8080
+
+common:
+  storage:
+    backend: azure
+    azure:
+      account_name: ${AZURE_STORAGE_ACCOUNT_NAME}
+      container_name: ${AZURE_STORAGE_CONTAINER_NAME_MIMIR}
+      endpoint_suffix: blob.core.windows.net
+
+blocks_storage:
+  storage_prefix: blocks
+  tsdb:
+    dir: /var/mimir/tsdb
+  bucket_store:
+    sync_dir: /var/mimir/tsdb-sync
+
+compactor:
+  data_dir: /var/mimir/compactor
+  sharding_ring:
+    kvstore:
+      store: inmemory
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+ingester:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+    replication_factor: 1
+
+store_gateway:
+  sharding_ring:
+    kvstore:
+      store: inmemory
+
+ruler_storage:
+  backend: azure
+  azure:
+    account_name: ${AZURE_STORAGE_ACCOUNT_NAME}
+    container_name: ${AZURE_STORAGE_CONTAINER_NAME_MIMIR}
+    endpoint_suffix: blob.core.windows.net

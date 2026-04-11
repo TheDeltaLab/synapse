@@ -1,0 +1,202 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Trinity Lance
+    folder: Trinity
+    interval: 1m
+    rules:
+      # 1. Query P99 latency > 3s
+      - uid: lance-query-latency-high
+        title: "Lance: Query P99 Latency"
+        condition: latency_threshold
+        data:
+          - refId: query_p99
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: histogram_quantile(0.99, sum by (le) (rate(lance_query_duration_bucket[5m])))
+              instant: true
+              refId: query_p99
+          - refId: latency_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: query_p99
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [3000]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-lance
+          summary: "Lance query P99 latency is {{ $values.query_p99 }}ms (threshold: 3000ms)"
+          description: "Vector/FTS queries are slow. Check table optimization status and disk I/O."
+        labels:
+          severity: warning
+          app: lance
+          category: latency
+
+      # 2. Record operation failure rate > 5%
+      - uid: lance-record-op-failure-rate
+        title: "Lance: Record Op Failure Rate"
+        condition: failure_threshold
+        data:
+          - refId: failure_rate
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                100 * sum(rate(lance_record_op_count_total{status="failed"}[5m]))
+                / clamp_min(sum(rate(lance_record_op_count_total[5m])), 0.001)
+              instant: true
+              refId: failure_rate
+          - refId: failure_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: failure_rate
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-lance
+          summary: "Lance record operation failure rate is {{ $values.failure_rate }}% (threshold: 5%)"
+          description: "LanceDB write operations are failing. Check storage capacity and data integrity."
+        labels:
+          severity: warning
+          app: lance
+          category: data
+
+      # 3. CDC sync failure rate > 10%
+      - uid: lance-sync-failure-rate
+        title: "Lance: CDC Sync Failure Rate"
+        condition: sync_failure_threshold
+        data:
+          - refId: sync_failure_rate
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: >
+                100 * sum(rate(lance_sync_event_count_total{status="failed"}[5m]))
+                / clamp_min(sum(rate(lance_sync_event_count_total[5m])), 0.001)
+              instant: true
+              refId: sync_failure_rate
+          - refId: sync_failure_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: sync_failure_rate
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-lance
+          summary: "Lance CDC sync failure rate is {{ $values.sync_failure_rate }}% (threshold: 10%)"
+          description: "Debezium CDC events are failing to sync to LanceDB. Check Debezium connector status and lance-worker logs."
+        labels:
+          severity: critical
+          app: lance
+          category: sync
+
+      # 4. Sync latency P95 > 10s
+      - uid: lance-sync-latency-high
+        title: "Lance: Sync Latency P95"
+        condition: sync_latency_threshold
+        data:
+          - refId: sync_p95
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              expr: histogram_quantile(0.95, sum by (le) (rate(lance_sync_latency_bucket[5m])))
+              instant: true
+              refId: sync_p95
+          - refId: sync_latency_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: sync_p95
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10000]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          __dashboardUid__: trinity-lance
+          summary: "Lance CDC sync P95 latency is {{ $values.sync_p95 }}ms (threshold: 10000ms)"
+          description: "Data freshness is degraded. Changes in Postgres take too long to appear in LanceDB."
+        labels:
+          severity: warning
+          app: lance
+          category: sync
+
+      # 5. Execute latency > 5s (Log-based)
+      - uid: lance-query-execute-latency-high
+        title: "Lance: Query Execute Latency"
+        condition: latency_threshold
+        data:
+          - refId: execute_latency
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >
+                max_over_time({service_name=~"lance|lance-worker"}
+                  |= `trinity_lance_query_execute_performance`
+                  | regexp `^(.*)\s+(?P<json_data>\{.*\})$`
+                  | line_format "{{.json_data}}"
+                  | json
+                  | unwrap totalMs [5m])
+              instant: true
+              refId: execute_latency
+          - refId: latency_threshold
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: execute_latency
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5000]
+                  operator:
+                    type: and
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          __dashboardUid__: trinity-lance
+          summary: "Lance query execution took {{ $values.execute_latency }}ms (threshold: 5000ms)"
+          description: "A single query execution in LanceDbQuery took longer than 5 seconds. This includes preparation, execution, and serialization."
+        labels:
+          severity: warning
+          app: lance
+          category: latency

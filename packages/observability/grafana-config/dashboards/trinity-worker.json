@@ -1,0 +1,283 @@
+{
+  "uid": "trinity-worker",
+  "_folderUid": "trinity",
+  "title": "Trinity Worker",
+  "tags": ["trinity", "worker", "otel"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service_name",
+        "type": "custom",
+        "current": { "text": "All", "value": "$__all" },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "worker", "value": "worker", "selected": false },
+          { "text": "lance-worker", "value": "lance-worker", "selected": false }
+        ],
+        "includeAll": true,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "Jobs Processed (5m)",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "expr": "sum(increase(worker_job_count_total{service_name=~\"$service_name\"}[5m]))",
+        "legendFormat": "",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Failure Rate (5m)",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "expr": "100 * sum(rate(worker_job_count_total{service_name=~\"$service_name\", status=\"failed\"}[5m])) / clamp_min(sum(rate(worker_job_count_total{service_name=~\"$service_name\"}[5m])), 0.001)",
+        "legendFormat": "",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "P95 Duration",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30000 },
+              { "color": "red", "value": 60000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le) (rate(worker_job_duration_bucket{service_name=~\"$service_name\"}[5m])))",
+        "legendFormat": "",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "P95 Queue Wait",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10000 },
+              { "color": "red", "value": 30000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le) (rate(worker_job_queue_wait_time_bucket{service_name=~\"$service_name\"}[5m])))",
+        "legendFormat": "",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "type": "row",
+      "title": "Job Throughput",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Job Rate by Task",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [{
+        "expr": "sum by (job) (rate(worker_job_count_total{service_name=~\"$service_name\"}[5m]))",
+        "legendFormat": "{{ job }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Job Success vs Failed",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 10 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [{
+        "expr": "sum by (status) (rate(worker_job_count_total{service_name=~\"$service_name\"}[5m]))",
+        "legendFormat": "{{ status }}",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "type": "row",
+      "title": "Latency",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Job Duration Percentiles",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(worker_job_duration_bucket{service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(worker_job_duration_bucket{service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(worker_job_duration_bucket{service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue Wait Time Percentiles",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(worker_job_queue_wait_time_bucket{service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(worker_job_queue_wait_time_bucket{service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(worker_job_queue_wait_time_bucket{service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+
+    {
+      "type": "row",
+      "title": "Errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Errors by Task",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [{
+        "expr": "sum by (job) (rate(worker_job_error_count_total{service_name=~\"$service_name\"}[5m]))",
+        "legendFormat": "{{ job }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Errors by Type",
+      "datasource": { "uid": "mimir", "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [{
+        "expr": "sum by (error_type) (rate(worker_job_error_count_total{service_name=~\"$service_name\"}[5m]))",
+        "legendFormat": "{{ error_type }}",
+        "refId": "A"
+      }]
+    }
+  ],
+  "schemaVersion": 39
+}
