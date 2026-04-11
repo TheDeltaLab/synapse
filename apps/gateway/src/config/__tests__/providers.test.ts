@@ -158,11 +158,15 @@ describe('providers config', () => {
         expect(haiku).toBeDefined();
     });
 
-    it('declares OpenRouter embedding deployment', () => {
-        const deployment = getDeployment('openrouter', 'qwen/qwen3-embedding-8b', 'embedding');
+    it('declares OpenRouter embedding deployments', () => {
+        const embedding8b = getDeployment('openrouter', 'qwen/qwen3-embedding-8b', 'embedding');
+        expect(embedding8b).toBeDefined();
+        expect(embedding8b?.modelId).toBe('qwen/qwen3-embedding-8b');
+        expect(embedding8b?.isDefault).toBe(true);
 
-        expect(deployment).toBeDefined();
-        expect(deployment?.modelId).toBe('qwen/qwen3-embedding-8b');
+        const embedding4b = getDeployment('openrouter', 'qwen/qwen3-embedding-4b', 'embedding');
+        expect(embedding4b).toBeDefined();
+        expect(embedding4b?.modelId).toBe('qwen/qwen3-embedding-4b');
     });
 
     it('declares Alibaba text-embedding-v4 deployment', () => {
@@ -206,6 +210,7 @@ describe('providers config', () => {
         ]);
         expect(getEmbeddingDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
             'qwen/qwen3-embedding-8b',
+            'qwen/qwen3-embedding-4b',
         ]);
         expect(getEmbeddingDeployments('alibaba').map(deployment => deployment.modelId)).toEqual([
             'text-embedding-v4',
