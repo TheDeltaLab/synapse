@@ -93,6 +93,7 @@ RUN addgroup --system --gid 1001 synapse && \
 COPY --from=prod-deps --chown=synapse:synapse /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/apps/gateway/node_modules ./apps/gateway/node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/packages/dal/node_modules ./packages/dal/node_modules
+COPY --from=prod-deps --chown=synapse:synapse /app/packages/observability/node_modules ./packages/observability/node_modules
 
 # Copy built application (workspace packages are bundled by tsup)
 COPY --from=builder --chown=synapse:synapse /app/apps/gateway/dist ./apps/gateway/dist
