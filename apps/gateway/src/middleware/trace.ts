@@ -17,8 +17,7 @@ export async function traceMiddleware(c: Context, next: Next) {
     });
 
     const extractedContext = propagation.extract(context.active(), headersCarrier);
-    console.log('headersCarrier', headersCarrier);
-    console.log(`Extracted trace context for ${method} ${path}:`, extractedContext);
+    console.log('headersCarrier traceparent', headersCarrier['traceparent']);
     return tracer.startActiveSpan(
         `${method} ${path}`,
         { kind: SpanKind.SERVER },
@@ -27,6 +26,7 @@ export async function traceMiddleware(c: Context, next: Next) {
             span.setAttribute('http.method', method);
             span.setAttribute('http.path', path);
             span.setAttribute('http.url', c.req.url);
+            console.log(`Started span for ${method} ${path} traceid: ${span.spanContext().traceId}`);
             try {
                 await next();
 
