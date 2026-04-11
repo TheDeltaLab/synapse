@@ -1,0 +1,32 @@
+name: synapse-dashboard
+type: KubernetesApp
+
+dependencies:
+  - resource: KubernetesServiceAccount.synapse-workload-sa
+    isHardDependency: true
+  - resource: KubernetesService.synapse-gateway
+    isHardDependency: true
+  - resource: KubernetesConfigMap.synapse-shared-config
+    isHardDependency: true
+  - resource: KubernetesManifest.synapse-secret-provider
+    isHardDependency: true
+
+defaultConfig:
+  namespace: synapse
+  image: ghcr.io/thedeltalab/synapse/dashboard:nightly
+  port: 3001
+  serviceAccountName: synapse-workload-sa
+  secretProvider: synapse-secret-provider
+  resources:
+    cpuRequest: "250m"
+    memoryRequest: 256Mi
+    cpuLimit: "500m"
+    memoryLimit: 512Mi
+  envFrom:
+    - configMapRef: synapse-shared-config
+    - secretRef: synapse-shared-secrets
+  envVars:
+    - APP_ENV=${ this.ring }
+  ingress:
+    subdomain: synapse
+    dnsZone: thebrainly.dev
