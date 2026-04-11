@@ -11,14 +11,16 @@ export async function traceMiddleware(c: Context, next: Next) {
     const method = c.req.method;
     const path = c.req.path;
 
-    // Extract W3C trace context from incoming headers
-    const headersCarrier: Record<string, string> = {};
-    c.req.raw.headers.forEach((value, key) => {
-        headersCarrier[key] = value;
-    });
+    // Only extract W3C trace context headers — avoid copying sensitive headers like authorization
+    const traceHeaders: Record<string, string> = {};
+    for (const key of ['traceparent', 'tracestate']) {
+        const value = c.req.header(key);
+        if (value) {
+            traceHeaders[key] = value;
+        }
+    }
 
-    const extractedContext = propagation.extract(context.active(), headersCarrier);
-    console.log('headersCarrier traceparent', headersCarrier['traceparent']);
+    const extractedContext = propagation.extract(context.active(), traceHeaders);
     return tracer.startActiveSpan(
         `${method} ${path}`,
         { kind: SpanKind.SERVER },
@@ -27,7 +29,6 @@ export async function traceMiddleware(c: Context, next: Next) {
             span.setAttribute('http.method', method);
             span.setAttribute('http.path', path);
             span.setAttribute('http.url', c.req.url);
-            console.log(`Started span for ${method} ${path} traceid: ${span.spanContext().traceId}`);
             try {
                 await next();
 
@@ -45,7 +46,6 @@ export async function traceMiddleware(c: Context, next: Next) {
                 }
                 throw error;
             } finally {
-                console.log(`Ending span for ${method} ${path}`);
                 span.end();
             }
         },

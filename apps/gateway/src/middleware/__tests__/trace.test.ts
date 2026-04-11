@@ -87,6 +87,31 @@ describe('traceMiddleware', () => {
         expect(carrier?.traceparent).toBe(traceparent);
     });
 
+    it('should not expose sensitive headers in the trace carrier', async () => {
+        const mockSpan = createMockSpan();
+        const extractSpy = vi.spyOn(otelApi.propagation, 'extract').mockReturnValue(otelApi.ROOT_CONTEXT);
+        vi.spyOn(otelApi.trace, 'getTracer').mockReturnValue(
+            createMockTracer(mockSpan) as unknown as otelApi.Tracer,
+        );
+
+        app.get('/secure', c => c.text('ok'));
+
+        await app.request('/secure', {
+            method: 'GET',
+            headers: {
+                traceparent: '00-abcdef1234567890abcdef1234567890-1234567890abcdef-01',
+                authorization: 'Bearer secret-token',
+                cookie: 'session=abc123',
+            },
+        });
+
+        const carrier = extractSpy.mock.calls[0]?.[1] as Record<string, string> | undefined;
+        expect(carrier).toBeDefined();
+        expect(carrier?.traceparent).toBeDefined();
+        expect(carrier).not.toHaveProperty('authorization');
+        expect(carrier).not.toHaveProperty('cookie');
+    });
+
     it('should record error when route handler throws', async () => {
         const mockSpan = createMockSpan();
         stubOtel(mockSpan);
