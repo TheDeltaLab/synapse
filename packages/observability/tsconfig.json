@@ -1,0 +1,15 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "rootDir": "./src",
+        "outDir": "./dist",
+        "baseUrl": "./",
+        "paths": {
+            "@trinity/observability/*": ["./src/*"]
+        },
+        "jsx": "react-jsx",
+        "noUncheckedIndexedAccess": false,
+        "exactOptionalPropertyTypes": false
+    },
+    "include": ["src"]
+}

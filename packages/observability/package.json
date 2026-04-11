@@ -1,0 +1,69 @@
+{
+    "name": "@synapse/observability",
+    "version": "0.1.0",
+    "description": "Shared observability package — OTel traces, metrics, logs for all Synapse apps",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "tsup && tsc-alias",
+        "lint": "eslint .",
+        "lint:fix": "eslint --fix ."
+    },
+    "exports": {
+        "./*": {
+            "types": "./dist/*.d.ts",
+            "import": "./dist/*.js",
+            "require": "./dist/*.cjs",
+            "default": "./dist/*.js"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            "*": [
+                "./dist/*"
+            ]
+        }
+    },
+    "dependencies": {
+        "@opentelemetry/api": "catalog:",
+        "@opentelemetry/api-logs": "catalog:",
+        "@opentelemetry/auto-instrumentations-node": "catalog:",
+        "@opentelemetry/core": "catalog:",
+        "@opentelemetry/exporter-logs-otlp-http": "catalog:",
+        "@opentelemetry/exporter-metrics-otlp-http": "catalog:",
+        "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+        "@opentelemetry/instrumentation": "catalog:",
+        "@opentelemetry/instrumentation-document-load": "catalog:",
+        "@opentelemetry/instrumentation-fetch": "catalog:",
+        "@opentelemetry/resources": "catalog:",
+        "@opentelemetry/sdk-logs": "catalog:",
+        "@opentelemetry/sdk-metrics": "catalog:",
+        "@opentelemetry/sdk-node": "catalog:",
+        "@opentelemetry/sdk-trace-base": "catalog:",
+        "@opentelemetry/sdk-trace-web": "catalog:",
+        "@opentelemetry/semantic-conventions": "catalog:"
+    },
+    "devDependencies": {
+        "@synapse/eslint-config": "workspace:*",
+        "@types/js-yaml": "^4.0.9",
+        "@types/node": "catalog:",
+        "@types/react": "catalog:",
+        "eslint": "catalog:",
+        "js-yaml": "^4.1.0",
+        "tsc-alias": "catalog:",
+        "tsup": "catalog:",
+        "typescript": "catalog:"
+    },
+    "peerDependencies": {
+        "react": ">=18"
+    },
+    "peerDependenciesMeta": {
+        "react": {
+            "optional": true
+        }
+    },
+    "files": [
+        "dist",
+        "package.json"
+    ]
+}
