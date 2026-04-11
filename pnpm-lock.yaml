@@ -429,6 +429,9 @@ importers:
         specifier: '>=18'
         version: 19.2.4
     devDependencies:
+      '@synapse/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
@@ -438,6 +441,9 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.14
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.4(jiti@2.6.1)
       js-yaml:
         specifier: ^4.1.0
         version: 4.1.1

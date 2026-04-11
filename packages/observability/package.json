@@ -6,8 +6,8 @@
     "type": "module",
     "scripts": {
         "build": "tsup && tsc-alias",
-        "lint": "eslint",
-        "lint:fix": "eslint --fix"
+        "lint": "eslint .",
+        "lint:fix": "eslint --fix ."
     },
     "exports": {
         "./*": {
@@ -44,9 +44,11 @@
         "@opentelemetry/semantic-conventions": "catalog:"
     },
     "devDependencies": {
+        "@synapse/eslint-config": "workspace:*",
         "@types/js-yaml": "^4.0.9",
         "@types/node": "catalog:",
         "@types/react": "catalog:",
+        "eslint": "catalog:",
         "js-yaml": "^4.1.0",
         "tsc-alias": "catalog:",
         "tsup": "catalog:",
