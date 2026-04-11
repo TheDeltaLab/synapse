@@ -23,7 +23,7 @@ function createEmbeddingModel(
         return google.embedding(model);
     }
 
-    // OpenAI-compatible providers (openai, openrouter, deepseek)
+    // OpenAI-compatible providers (openai, openrouter, deepseek, alibaba)
     const openai = createOpenAI({
         baseURL: `${GATEWAY_URL}/v1`,
         apiKey,

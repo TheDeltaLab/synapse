@@ -17,6 +17,11 @@ describe('getProviderAdapter', () => {
         expect(adapter.style).toBe('openai');
     });
 
+    it('should return openai adapter for alibaba provider', () => {
+        const adapter = getProviderAdapter('alibaba');
+        expect(adapter.style).toBe('openai');
+    });
+
     it('should return anthropic adapter for anthropic provider', () => {
         const adapter = getProviderAdapter('anthropic');
         expect(adapter.style).toBe('anthropic');
