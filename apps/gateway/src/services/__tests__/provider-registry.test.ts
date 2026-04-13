@@ -251,7 +251,7 @@ describe('ProviderRegistry', () => {
             process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
             const registry = await createRegistry();
-            expect(registry.getEmbeddingModels('openrouter')).toEqual(['qwen/qwen3-embedding-8b']);
+            expect(registry.getEmbeddingModels('openrouter')).toEqual(['qwen/qwen3-embedding-8b', 'qwen/qwen3-embedding-4b']);
         });
 
         it('returns default embedding model', async () => {

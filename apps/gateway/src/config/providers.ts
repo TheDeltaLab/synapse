@@ -182,6 +182,12 @@ export const deployments = [
         isDefault: true,
     },
     {
+        id: 'openrouter:qwen/qwen3-embedding-4b:embedding',
+        providerId: 'openrouter',
+        modelId: 'qwen/qwen3-embedding-4b',
+        task: 'embedding',
+    },
+    {
         id: 'deepseek:deepseek-chat:chat',
         providerId: 'deepseek',
         modelId: 'deepseek-chat',
