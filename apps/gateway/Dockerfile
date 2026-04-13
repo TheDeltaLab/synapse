@@ -27,6 +27,7 @@ COPY packages/shared/package.json ./packages/shared/
 COPY packages/dal/package.json ./packages/dal/
 COPY packages/config/package.json ./packages/config/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
+COPY packages/observability/package.json ./packages/observability/
 
 # Install all dependencies with frozen lockfile
 RUN pnpm install --frozen-lockfile
@@ -41,6 +42,7 @@ COPY --from=deps /app/apps/gateway/node_modules ./apps/gateway/node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/packages/dal/node_modules ./packages/dal/node_modules
 COPY --from=deps /app/packages/config/node_modules ./packages/config/node_modules
+COPY --from=deps /app/packages/observability/node_modules ./packages/observability/node_modules
 
 # Copy workspace files
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
@@ -48,6 +50,7 @@ COPY apps/gateway/ ./apps/gateway/
 COPY packages/shared/ ./packages/shared/
 COPY packages/dal/ ./packages/dal/
 COPY packages/config/ ./packages/config/
+COPY packages/observability/ ./packages/observability/
 
 # Generate Prisma client
 RUN pnpm --filter @synapse/dal db:generate
@@ -67,6 +70,7 @@ COPY packages/shared/package.json ./packages/shared/
 COPY packages/dal/package.json ./packages/dal/
 COPY packages/config/package.json ./packages/config/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
+COPY packages/observability/package.json ./packages/observability/
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
@@ -89,6 +93,7 @@ RUN addgroup --system --gid 1001 synapse && \
 COPY --from=prod-deps --chown=synapse:synapse /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/apps/gateway/node_modules ./apps/gateway/node_modules
 COPY --from=prod-deps --chown=synapse:synapse /app/packages/dal/node_modules ./packages/dal/node_modules
+COPY --from=prod-deps --chown=synapse:synapse /app/packages/observability/node_modules ./packages/observability/node_modules
 
 # Copy built application (workspace packages are bundled by tsup)
 COPY --from=builder --chown=synapse:synapse /app/apps/gateway/dist ./apps/gateway/dist
@@ -97,6 +102,10 @@ COPY --from=builder --chown=synapse:synapse /app/apps/gateway/package.json ./app
 # Copy Prisma schema and generated client (needed at runtime for Prisma)
 COPY --from=builder --chown=synapse:synapse /app/packages/dal/prisma ./packages/dal/prisma
 COPY --from=builder --chown=synapse:synapse /app/packages/dal/generated ./packages/dal/generated
+
+# Copy observability dist (external dependency, needed at runtime)
+COPY --from=builder --chown=synapse:synapse /app/packages/observability/dist ./packages/observability/dist
+COPY --from=builder --chown=synapse:synapse /app/packages/observability/package.json ./packages/observability/
 
 # Copy root package.json and pnpm-workspace.yaml for workspace resolution
 COPY --chown=synapse:synapse package.json pnpm-workspace.yaml ./
