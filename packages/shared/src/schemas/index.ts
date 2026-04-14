@@ -69,6 +69,7 @@ export {
     embeddingLogListResponseSchema,
     embeddingProviderStatsSchema,
     embeddingModelStatsSchema,
+    embeddingAnalyticsQuerySchema,
     embeddingAnalyticsResponseSchema,
     type EmbeddingRequest,
     type EmbeddingObject,
@@ -79,6 +80,7 @@ export {
     type EmbeddingLogListResponse,
     type EmbeddingProviderStats,
     type EmbeddingModelStats,
+    type EmbeddingAnalyticsQuery,
     type EmbeddingAnalyticsResponse,
 } from './embeddings.js';
 

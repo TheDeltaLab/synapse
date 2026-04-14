@@ -13,6 +13,7 @@ import type {
     EmbeddingLogsQuery,
     EmbeddingLogListResponse,
     EmbeddingLogItem,
+    EmbeddingAnalyticsQuery,
     EmbeddingAnalyticsResponse,
 } from '@synapse/shared';
 
@@ -119,6 +120,8 @@ class GatewayClient {
     async getAnalytics(query?: Partial<AnalyticsQuery>): Promise<AnalyticsResponse> {
         const params = new URLSearchParams();
         if (query?.range) params.set('range', query.range);
+        if (query?.apiKeyId) params.set('apiKeyId', query.apiKeyId);
+        if (query?.cacheMissOnly !== undefined) params.set('cacheMissOnly', query.cacheMissOnly.toString());
 
         const url = `${this.baseUrl}/admin/logs/analytics${params.toString() ? `?${params.toString()}` : ''}`;
         const response = await fetch(url);
@@ -166,9 +169,10 @@ class GatewayClient {
         return response.json();
     }
 
-    async getEmbeddingAnalytics(query?: Partial<AnalyticsQuery>): Promise<EmbeddingAnalyticsResponse> {
+    async getEmbeddingAnalytics(query?: Partial<EmbeddingAnalyticsQuery>): Promise<EmbeddingAnalyticsResponse> {
         const params = new URLSearchParams();
         if (query?.range) params.set('range', query.range);
+        if (query?.apiKeyId) params.set('apiKeyId', query.apiKeyId);
 
         const url = `${this.baseUrl}/admin/logs/embeddings/analytics${params.toString() ? `?${params.toString()}` : ''}`;
         const response = await fetch(url);

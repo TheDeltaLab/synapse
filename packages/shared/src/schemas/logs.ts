@@ -134,6 +134,8 @@ export type ModelLatencyStats = z.infer<typeof modelLatencyStatsSchema>;
 // Analytics response
 export const analyticsResponseSchema = z.object({
     totalRequests: z.number(),
+    totalResponses: z.number(),
+    successRate: z.number(),
     cacheHitRate: z.number(),
     uniqueProviders: z.number(),
     uniqueModels: z.number(),
@@ -151,9 +153,17 @@ export const analyticsResponseSchema = z.object({
 
 export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;
 
+const booleanQueryParamSchema = z.preprocess((value) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+}, z.boolean());
+
 // Analytics query params
 export const analyticsQuerySchema = z.object({
     range: analyticsRangeSchema.default('24h'),
+    apiKeyId: z.string().uuid().optional(),
+    cacheMissOnly: booleanQueryParamSchema.optional(),
 });
 
 export type AnalyticsQuery = z.infer<typeof analyticsQuerySchema>;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { analyticsRangeSchema } from './logs.js';
 
 // ============================================================
 // Request Schema
@@ -116,9 +117,17 @@ export const embeddingModelStatsSchema = z.object({
     totalTokens: z.number().int().nonnegative(),
 });
 
+/** Embedding analytics query parameters */
+export const embeddingAnalyticsQuerySchema = z.object({
+    range: analyticsRangeSchema.default('24h'),
+    apiKeyId: z.string().uuid().optional(),
+});
+
 /** Embedding analytics response */
 export const embeddingAnalyticsResponseSchema = z.object({
     totalRequests: z.number().int().nonnegative(),
+    totalResponses: z.number().int().nonnegative(),
+    successRate: z.number().min(0).max(100),
     totalTokens: z.number().int().nonnegative(),
     avgLatency: z.number().nullable(),
     uniqueProviders: z.number().int().nonnegative(),
@@ -152,4 +161,5 @@ export type EmbeddingLogsQuery = z.infer<typeof embeddingLogsQuerySchema>;
 export type EmbeddingLogListResponse = z.infer<typeof embeddingLogListResponseSchema>;
 export type EmbeddingProviderStats = z.infer<typeof embeddingProviderStatsSchema>;
 export type EmbeddingModelStats = z.infer<typeof embeddingModelStatsSchema>;
+export type EmbeddingAnalyticsQuery = z.infer<typeof embeddingAnalyticsQuerySchema>;
 export type EmbeddingAnalyticsResponse = z.infer<typeof embeddingAnalyticsResponseSchema>;
