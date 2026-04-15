@@ -167,13 +167,42 @@ jobs:
           echo "| Deploy Gateway | $DEPLOY_GATEWAY |" >> $GITHUB_STEP_SUMMARY
           echo "| Deploy Dashboard | $DEPLOY_DASHBOARD |" >> $GITHUB_STEP_SUMMARY
 
+  db-migrate:
+    name: Database Migration (${{ needs.prepare.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: needs.prepare.outputs.should_deploy == 'true'
+    environment: ${{ needs.prepare.outputs.environment }}
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm --filter @synapse/dal install --frozen-lockfile
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @synapse/dal exec prisma migrate deploy
+
   deploy-gateway:
     name: Deploy Gateway (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: prepare
+    needs: [prepare, db-migrate]
     if: |
       needs.prepare.outputs.should_deploy == 'true' &&
-      needs.prepare.outputs.deploy_gateway == 'true'
+      needs.prepare.outputs.deploy_gateway == 'true' &&
+      needs.db-migrate.result == 'success'
     environment: ${{ needs.prepare.outputs.environment }}
     permissions:
       id-token: write  # Required for OIDC authentication
@@ -209,11 +238,12 @@ jobs:
   deploy-dashboard:
     name: Deploy Dashboard (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: [prepare, deploy-gateway]
+    needs: [prepare, db-migrate, deploy-gateway]
     if: |
       always() &&
       needs.prepare.outputs.should_deploy == 'true' &&
       needs.prepare.outputs.deploy_dashboard == 'true' &&
+      needs.db-migrate.result == 'success' &&
       (needs.deploy-gateway.result == 'success' || needs.deploy-gateway.result == 'skipped')
     environment: ${{ needs.prepare.outputs.environment }}
     permissions:
@@ -251,10 +281,11 @@ jobs:
   health-check:
     name: Health Check (${{ needs.prepare.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: [prepare, deploy-gateway, deploy-dashboard]
+    needs: [prepare, db-migrate, deploy-gateway, deploy-dashboard]
     if: |
       always() &&
       needs.prepare.outputs.should_deploy == 'true' &&
+      needs.db-migrate.result == 'success' &&
       (needs.deploy-gateway.result == 'success' || needs.deploy-gateway.result == 'skipped') &&
       (needs.deploy-dashboard.result == 'success' || needs.deploy-dashboard.result == 'skipped') &&
       (needs.deploy-gateway.result == 'success' || needs.deploy-dashboard.result == 'success')
