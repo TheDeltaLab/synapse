@@ -8,7 +8,7 @@ import {
     logsQuerySchema,
     analyticsQuerySchema,
     embeddingLogsQuerySchema,
-    analyticsRangeSchema,
+    embeddingAnalyticsQuerySchema,
     HTTP_STATUS,
     type ApiKeyResponse,
     type ApiKeyCreatedResponse,
@@ -17,7 +17,9 @@ import {
     type RequestLogItem,
     type RequestLogDetail,
     type RequestLogListResponse,
+    type AnalyticsRange,
     type AnalyticsResponse,
+    type EmbeddingAnalyticsResponse,
 } from '@synapse/shared';
 import {
     providers,
@@ -68,6 +70,49 @@ const generateApiKey = (): string => {
         randomPart += ALPHANUMERIC_CHARS[bytes[i]! % ALPHANUMERIC_CHARS.length];
     }
     return `${prefix}-${randomPart}`;
+};
+
+const getStartDateFromRange = (range: AnalyticsRange): Date => {
+    const startDate = new Date();
+
+    switch (range) {
+        case '15m':
+            startDate.setMinutes(startDate.getMinutes() - 15);
+            break;
+        case '1h':
+            startDate.setHours(startDate.getHours() - 1);
+            break;
+        case '24h':
+            startDate.setHours(startDate.getHours() - 24);
+            break;
+        case '7d':
+            startDate.setDate(startDate.getDate() - 7);
+            break;
+        case '30d':
+            startDate.setDate(startDate.getDate() - 30);
+            break;
+    }
+
+    return startDate;
+};
+
+const getTimeKey = (range: AnalyticsRange, date: Date): string => {
+    if (range === '15m' || range === '1h') {
+        return date.toISOString().slice(0, 16) + ':00Z';
+    }
+
+    if (range === '24h') {
+        return date.toISOString().slice(0, 13) + ':00:00Z';
+    }
+
+    return date.toISOString().slice(0, 10);
+};
+
+const calculatePercentile = (arr: number[], percentile: number): number | null => {
+    if (arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, index)] ?? null;
 };
 
 // List all API keys
@@ -365,6 +410,8 @@ admin.get('/logs', async (c) => {
 admin.get('/logs/analytics', async (c) => {
     const queryParams = {
         range: c.req.query('range') || '24h',
+        apiKeyId: c.req.query('apiKeyId'),
+        cacheMissOnly: c.req.query('cacheMissOnly'),
     };
 
     const parsed = analyticsQuerySchema.safeParse(queryParams);
@@ -379,49 +426,47 @@ admin.get('/logs/analytics', async (c) => {
         );
     }
 
-    const { range } = parsed.data;
+    const { range, apiKeyId, cacheMissOnly } = parsed.data;
 
-    // Calculate date range
     const now = new Date();
-    const startDate = new Date();
-    switch (range) {
-        case '15m':
-            startDate.setMinutes(startDate.getMinutes() - 15);
-            break;
-        case '1h':
-            startDate.setHours(startDate.getHours() - 1);
-            break;
-        case '24h':
-            startDate.setHours(startDate.getHours() - 24);
-            break;
-        case '7d':
-            startDate.setDate(startDate.getDate() - 7);
-            break;
-        case '30d':
-            startDate.setDate(startDate.getDate() - 30);
-            break;
-    }
-
-    const where = {
+    const startDate = getStartDateFromRange(range);
+    const baseWhere: Record<string, unknown> = {
         createdAt: { gte: startDate, lte: now },
     };
 
-    // Get all logs in range for aggregation
-    const logs = await prisma.requestLog.findMany({
-        where,
-        select: {
-            provider: true,
-            model: true,
-            inputTokens: true,
-            outputTokens: true,
-            totalTokens: true,
-            cached: true,
-            latency: true,
-            createdAt: true,
-        },
-    });
+    if (apiKeyId) {
+        baseWhere.apiKeyId = apiKeyId;
+    }
+
+    if (cacheMissOnly) {
+        baseWhere.cached = false;
+    }
+
+    const where = {
+        ...baseWhere,
+        statusCode: 200,
+    };
+
+    // Get all successful logs in range for aggregation
+    const [logs, totalResponses] = await Promise.all([
+        prisma.requestLog.findMany({
+            where,
+            select: {
+                provider: true,
+                model: true,
+                inputTokens: true,
+                outputTokens: true,
+                totalTokens: true,
+                cached: true,
+                latency: true,
+                createdAt: true,
+            },
+        }),
+        prisma.requestLog.count({ where: baseWhere }),
+    ]);
 
     const totalRequests = logs.length;
+    const successRate = totalResponses > 0 ? (totalRequests / totalResponses) * 100 : 0;
     const cachedRequests = logs.filter(l => l.cached).length;
     const cacheHitRate = totalRequests > 0 ? (cachedRequests / totalRequests) * 100 : 0;
 
@@ -470,21 +515,8 @@ admin.get('/logs/analytics', async (c) => {
     }));
 
     // Token usage over time (group by minute, hour, or day depending on range)
-    const getTimeKey = (date: Date): string => {
-        if (range === '15m' || range === '1h') {
-            // Group by minute
-            return date.toISOString().slice(0, 16) + ':00Z';
-        } else if (range === '24h') {
-            // Group by hour
-            return date.toISOString().slice(0, 13) + ':00:00Z';
-        } else {
-            // Group by day
-            return date.toISOString().slice(0, 10);
-        }
-    };
-
     const tokenUsageMap = logs.reduce((acc, l) => {
-        const key = getTimeKey(new Date(l.createdAt));
+        const key = getTimeKey(range, new Date(l.createdAt));
         if (!acc[key]) {
             acc[key] = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
         }
@@ -500,7 +532,7 @@ admin.get('/logs/analytics', async (c) => {
 
     // Requests over time (time series)
     const requestsMap = logs.reduce((acc, l) => {
-        const key = getTimeKey(new Date(l.createdAt));
+        const key = getTimeKey(range, new Date(l.createdAt));
         acc[key] = (acc[key] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
@@ -509,18 +541,10 @@ admin.get('/logs/analytics', async (c) => {
         .map(([date, count]) => ({ date, count }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Helper function to calculate percentiles
-    const calculatePercentile = (arr: number[], percentile: number): number | null => {
-        if (arr.length === 0) return null;
-        const sorted = [...arr].sort((a, b) => a - b);
-        const index = Math.ceil((percentile / 100) * sorted.length) - 1;
-        return sorted[Math.max(0, index)] ?? null;
-    };
-
     // Latency over time with percentiles (time series)
     const latencyByTimeMap = logs.reduce((acc, l) => {
         if (l.latency === null) return acc;
-        const key = getTimeKey(new Date(l.createdAt));
+        const key = getTimeKey(range, new Date(l.createdAt));
         if (!acc[key]) {
             acc[key] = [];
         }
@@ -555,6 +579,8 @@ admin.get('/logs/analytics', async (c) => {
 
     const response: AnalyticsResponse = {
         totalRequests,
+        totalResponses,
+        successRate,
         cacheHitRate,
         uniqueProviders,
         uniqueModels,
@@ -604,57 +630,57 @@ admin.get('/providers/embedding', (c) => {
 
 // GET /admin/logs/embeddings/analytics - Get embedding analytics data
 admin.get('/logs/embeddings/analytics', async (c) => {
-    const rangeParam = c.req.query('range') || '24h';
-    const rangeResult = analyticsRangeSchema.safeParse(rangeParam);
+    const queryParams = {
+        range: c.req.query('range') || '24h',
+        apiKeyId: c.req.query('apiKeyId'),
+    };
 
-    if (!rangeResult.success) {
+    const parsed = embeddingAnalyticsQuerySchema.safeParse(queryParams);
+    if (!parsed.success) {
         return c.json(
-            { error: 'Bad Request', message: 'Invalid range parameter' },
+            {
+                error: 'Validation Error',
+                message: 'Invalid query parameters',
+                details: parsed.error.flatten().fieldErrors,
+            },
             HTTP_STATUS.BAD_REQUEST,
         );
     }
 
-    const range = rangeResult.data;
+    const { range, apiKeyId } = parsed.data;
 
-    // Calculate time range
     const now = new Date();
-    const startDate = new Date();
-    switch (range) {
-        case '15m':
-            startDate.setMinutes(startDate.getMinutes() - 15);
-            break;
-        case '1h':
-            startDate.setHours(startDate.getHours() - 1);
-            break;
-        case '24h':
-            startDate.setHours(startDate.getHours() - 24);
-            break;
-        case '7d':
-            startDate.setDate(startDate.getDate() - 7);
-            break;
-        case '30d':
-            startDate.setDate(startDate.getDate() - 30);
-            break;
+    const startDate = getStartDateFromRange(range);
+    const baseWhere: Record<string, unknown> = {
+        createdAt: { gte: startDate, lte: now },
+    };
+
+    if (apiKeyId) {
+        baseWhere.apiKeyId = apiKeyId;
     }
 
     const where = {
-        createdAt: { gte: startDate, lte: now },
+        ...baseWhere,
         statusCode: 200,
     };
 
-    // Fetch all logs in range for aggregation
-    const logs = await prisma.embeddingLog.findMany({
-        where,
-        select: {
-            provider: true,
-            model: true,
-            tokens: true,
-            latency: true,
-            createdAt: true,
-        },
-    });
+    // Fetch all successful logs in range for aggregation
+    const [logs, totalResponses] = await Promise.all([
+        prisma.embeddingLog.findMany({
+            where,
+            select: {
+                provider: true,
+                model: true,
+                tokens: true,
+                latency: true,
+                createdAt: true,
+            },
+        }),
+        prisma.embeddingLog.count({ where: baseWhere }),
+    ]);
 
     const totalRequests = logs.length;
+    const successRate = totalResponses > 0 ? (totalRequests / totalResponses) * 100 : 0;
     const uniqueProviders = new Set(logs.map(l => l.provider)).size;
     const uniqueModels = new Set(logs.map(l => l.model)).size;
 
@@ -704,20 +730,9 @@ admin.get('/logs/embeddings/analytics', async (c) => {
         totalTokens: m.tokens,
     }));
 
-    // Time grouping helper
-    const getTimeKey = (date: Date): string => {
-        if (range === '15m' || range === '1h') {
-            return date.toISOString().slice(0, 16) + ':00Z';
-        } else if (range === '24h') {
-            return date.toISOString().slice(0, 13) + ':00:00Z';
-        } else {
-            return date.toISOString().slice(0, 10);
-        }
-    };
-
     // Token usage over time
     const tokenUsageMap = logs.reduce((acc, l) => {
-        const key = getTimeKey(new Date(l.createdAt));
+        const key = getTimeKey(range, new Date(l.createdAt));
         if (!acc[key]) {
             acc[key] = { tokens: 0, count: 0 };
         }
@@ -731,16 +746,9 @@ admin.get('/logs/embeddings/analytics', async (c) => {
         .sort((a, b) => a.date.localeCompare(b.date));
 
     // Latency over time with percentiles
-    const calculatePercentile = (arr: number[], percentile: number): number | null => {
-        if (arr.length === 0) return null;
-        const sorted = [...arr].sort((a, b) => a - b);
-        const index = Math.ceil((percentile / 100) * sorted.length) - 1;
-        return sorted[Math.max(0, index)] ?? null;
-    };
-
     const latencyByTimeMap = logs.reduce((acc, l) => {
         if (l.latency === null) return acc;
-        const key = getTimeKey(new Date(l.createdAt));
+        const key = getTimeKey(range, new Date(l.createdAt));
         if (!acc[key]) {
             acc[key] = [];
         }
@@ -760,8 +768,10 @@ admin.get('/logs/embeddings/analytics', async (c) => {
         }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-    return c.json({
+    const response: EmbeddingAnalyticsResponse = {
         totalRequests,
+        totalResponses,
+        successRate,
         totalTokens,
         avgLatency,
         uniqueProviders,
@@ -770,7 +780,9 @@ admin.get('/logs/embeddings/analytics', async (c) => {
         modelStats,
         tokenUsageOverTime,
         latencyOverTime,
-    });
+    };
+
+    return c.json(response);
 });
 
 // GET /admin/logs/embeddings - List embedding logs with pagination and filters

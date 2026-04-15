@@ -9,6 +9,7 @@ import {
     embeddingLogListResponseSchema,
     embeddingProviderStatsSchema,
     embeddingModelStatsSchema,
+    embeddingAnalyticsQuerySchema,
     embeddingAnalyticsResponseSchema,
 } from '../embeddings.js';
 
@@ -563,9 +564,39 @@ describe('embeddingModelStatsSchema', () => {
     });
 });
 
+describe('embeddingAnalyticsQuerySchema', () => {
+    it('should apply the default range', () => {
+        const result = embeddingAnalyticsQuerySchema.safeParse({});
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.data.range).toBe('24h');
+            expect(result.data.apiKeyId).toBeUndefined();
+        }
+    });
+
+    it('should accept a valid apiKeyId', () => {
+        const result = embeddingAnalyticsQuerySchema.safeParse({
+            apiKeyId: '550e8400-e29b-41d4-a716-446655440000',
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    it('should reject an invalid apiKeyId', () => {
+        const result = embeddingAnalyticsQuerySchema.safeParse({
+            apiKeyId: 'not-a-uuid',
+        });
+
+        expect(result.success).toBe(false);
+    });
+});
+
 describe('embeddingAnalyticsResponseSchema', () => {
     const validAnalytics = {
         totalRequests: 10000,
+        totalResponses: 12000,
+        successRate: 83.33333333333334,
         totalTokens: 500000,
         avgLatency: 150.5,
         uniqueProviders: 2,
@@ -605,6 +636,8 @@ describe('embeddingAnalyticsResponseSchema', () => {
     it('should accept empty arrays', () => {
         const result = embeddingAnalyticsResponseSchema.safeParse({
             totalRequests: 0,
+            totalResponses: 0,
+            successRate: 0,
             totalTokens: 0,
             avgLatency: null,
             uniqueProviders: 0,
