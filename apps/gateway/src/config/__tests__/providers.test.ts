@@ -203,6 +203,9 @@ describe('providers config', () => {
         ]);
         expect(getChatDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
             'gpt-5-mini',
+            'anthropic/claude-opus-4.7',
+            'anthropic/claude-sonnet-4.6',
+            'anthropic/claude-haiku-4.5',
         ]);
         expect(getChatDeployments('deepseek').map(deployment => deployment.modelId)).toEqual([
             'deepseek-chat',

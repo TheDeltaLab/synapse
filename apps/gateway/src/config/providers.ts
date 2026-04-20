@@ -175,6 +175,24 @@ export const deployments = [
         isDefault: true,
     },
     {
+        id: 'openrouter:anthropic/claude-opus-4.7:chat',
+        providerId: 'openrouter',
+        modelId: 'anthropic/claude-opus-4.7',
+        task: 'chat',
+    },
+    {
+        id: 'openrouter:anthropic/claude-sonnet-4.6:chat',
+        providerId: 'openrouter',
+        modelId: 'anthropic/claude-sonnet-4.6',
+        task: 'chat',
+    },
+    {
+        id: 'openrouter:anthropic/claude-haiku-4.5:chat',
+        providerId: 'openrouter',
+        modelId: 'anthropic/claude-haiku-4.5',
+        task: 'chat',
+    },
+    {
         id: 'openrouter:qwen/qwen3-embedding-8b:embedding',
         providerId: 'openrouter',
         modelId: 'qwen/qwen3-embedding-8b',
