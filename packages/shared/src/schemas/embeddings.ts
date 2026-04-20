@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { analyticsRangeSchema } from './logs.js';
+import { analyticsRangeSchema, cacheTypeSchema } from './logs.js';
 
 // ============================================================
 // Request Schema
@@ -71,6 +71,9 @@ export const embeddingLogItemSchema = z.object({
     dimensions: z.number().int().positive().nullable(),
     requestContent: z.string().nullable(),
     tokens: z.number().int().nonnegative().nullable(),
+    cached: z.boolean(),
+    cacheType: cacheTypeSchema.nullable(),
+    cacheTtl: z.number().int().nonnegative().nullable(),
     latency: z.number().int().nonnegative().nullable(),
     statusCode: z.number().int(),
     createdAt: z.string().datetime(),
@@ -82,6 +85,7 @@ export const embeddingLogsQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(20),
     provider: z.string().optional(),
     model: z.string().optional(),
+    cached: z.enum(['true', 'false']).optional(),
     startDate: z.string().datetime().optional(),
     endDate: z.string().datetime().optional(),
     apiKeyId: z.string().uuid().optional(),
@@ -118,9 +122,16 @@ export const embeddingModelStatsSchema = z.object({
 });
 
 /** Embedding analytics query parameters */
+const booleanQueryParamSchema = z.preprocess((value) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+}, z.boolean());
+
 export const embeddingAnalyticsQuerySchema = z.object({
     range: analyticsRangeSchema.default('24h'),
     apiKeyId: z.string().uuid().optional(),
+    cacheMissOnly: booleanQueryParamSchema.optional(),
 });
 
 /** Embedding analytics response */
@@ -128,6 +139,7 @@ export const embeddingAnalyticsResponseSchema = z.object({
     totalRequests: z.number().int().nonnegative(),
     totalResponses: z.number().int().nonnegative(),
     successRate: z.number().min(0).max(100),
+    cacheHitRate: z.number().min(0).max(100),
     totalTokens: z.number().int().nonnegative(),
     avgLatency: z.number().nullable(),
     uniqueProviders: z.number().int().nonnegative(),

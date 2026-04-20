@@ -62,7 +62,8 @@ export default function AnalyticsPage() {
     const [range, setRange] = useState<AnalyticsRange>('24h');
     const [selectedApiKeyId, setSelectedApiKeyId] = useState('all');
     const [activeTab, setActiveTab] = useState<'chat' | 'embedding'>('chat');
-    const [cacheMissOnly, setCacheMissOnly] = useState(false);
+    const [chatCacheMissOnly, setChatCacheMissOnly] = useState(false);
+    const [embeddingCacheMissOnly, setEmbeddingCacheMissOnly] = useState(false);
 
     const loadApiKeys = useCallback(async () => {
         setApiKeysLoading(true);
@@ -83,7 +84,7 @@ export default function AnalyticsPage() {
         setChatError(null);
 
         try {
-            const data = await gateway.getAnalytics({ range, apiKeyId, cacheMissOnly });
+            const data = await gateway.getAnalytics({ range, apiKeyId, cacheMissOnly: chatCacheMissOnly });
             setChatAnalytics(data);
         } catch (err) {
             console.error('Failed to load chat analytics:', err);
@@ -92,7 +93,7 @@ export default function AnalyticsPage() {
         } finally {
             setChatLoading(false);
         }
-    }, [cacheMissOnly, range, selectedApiKeyId]);
+    }, [chatCacheMissOnly, range, selectedApiKeyId]);
 
     const loadEmbeddingAnalytics = useCallback(async () => {
         const apiKeyId = selectedApiKeyId !== 'all' ? selectedApiKeyId : undefined;
@@ -101,7 +102,7 @@ export default function AnalyticsPage() {
         setEmbeddingError(null);
 
         try {
-            const data = await gateway.getEmbeddingAnalytics({ range, apiKeyId });
+            const data = await gateway.getEmbeddingAnalytics({ range, apiKeyId, cacheMissOnly: embeddingCacheMissOnly });
             setEmbeddingAnalytics(data);
         } catch (err) {
             console.error('Failed to load embedding analytics:', err);
@@ -110,7 +111,7 @@ export default function AnalyticsPage() {
         } finally {
             setEmbeddingLoading(false);
         }
-    }, [range, selectedApiKeyId]);
+    }, [embeddingCacheMissOnly, range, selectedApiKeyId]);
 
     const refreshAll = useCallback(async () => {
         await Promise.all([loadChatAnalytics(), loadEmbeddingAnalytics()]);
@@ -206,12 +207,12 @@ export default function AnalyticsPage() {
                                         </p>
                                     </div>
                                     <div className="flex flex-col items-start gap-1 rounded-lg border px-3 py-2 lg:items-end">
-                                        <label htmlFor="cache-miss-only" className="flex items-center gap-2 text-sm font-medium">
+                                        <label htmlFor="chat-cache-miss-only" className="flex items-center gap-2 text-sm font-medium">
                                             <input
-                                                id="cache-miss-only"
+                                                id="chat-cache-miss-only"
                                                 type="checkbox"
-                                                checked={cacheMissOnly}
-                                                onChange={event => setCacheMissOnly(event.target.checked)}
+                                                checked={chatCacheMissOnly}
+                                                onChange={event => setChatCacheMissOnly(event.target.checked)}
                                                 className="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-ring focus:ring-offset-2"
                                             />
                                             <span>Only cache misses</span>
@@ -251,7 +252,7 @@ export default function AnalyticsPage() {
                                                 icon={CheckCircle2}
                                                 description={`${formatNumber(chatAnalytics.totalRequests)} / ${formatNumber(chatAnalytics.totalResponses)} successful`}
                                             />
-                                            {cacheMissOnly ? (
+                                            {chatCacheMissOnly ? (
                                                 <StatCard
                                                     title="Cache Scope"
                                                     value="Misses only"
@@ -296,17 +297,33 @@ export default function AnalyticsPage() {
                             </section>
                         ) : (
                             <section className="space-y-4">
-                                <div>
-                                    <h2 className="text-lg font-semibold">Embedding Analytics</h2>
-                                    <p className="text-sm text-muted-foreground">
-                                        Analyze successful embedding requests, provider mix, model usage, and latency trends.
-                                    </p>
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                        <h2 className="text-lg font-semibold">Embedding Analytics</h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            Analyze successful embedding requests, cache usage, provider mix, model usage, and latency trends.
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-col items-start gap-1 rounded-lg border px-3 py-2 lg:items-end">
+                                        <label htmlFor="embedding-cache-miss-only" className="flex items-center gap-2 text-sm font-medium">
+                                            <input
+                                                id="embedding-cache-miss-only"
+                                                type="checkbox"
+                                                checked={embeddingCacheMissOnly}
+                                                onChange={event => setEmbeddingCacheMissOnly(event.target.checked)}
+                                                className="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                            />
+                                            <span>Only cache misses</span>
+                                        </label>
+                                        <p className="text-xs text-muted-foreground">Applies to Embedding Analytics only.</p>
+                                    </div>
                                 </div>
                                 <EmbeddingAnalyticsSection
                                     analytics={embeddingAnalytics}
                                     loading={embeddingLoading}
                                     error={embeddingError}
                                     range={range}
+                                    cacheMissOnly={embeddingCacheMissOnly}
                                     onRetry={() => void loadEmbeddingAnalytics()}
                                 />
                             </section>

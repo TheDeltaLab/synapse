@@ -21,12 +21,13 @@ export default function EmbeddingAnalyticsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [range, setRange] = useState<AnalyticsRange>('24h');
+    const [cacheMissOnly, setCacheMissOnly] = useState(false);
 
     const loadAnalytics = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const data = await gateway.getEmbeddingAnalytics({ range });
+            const data = await gateway.getEmbeddingAnalytics({ range, cacheMissOnly });
             setAnalytics(data);
         } catch (err) {
             console.error('Failed to load embedding analytics:', err);
@@ -34,7 +35,7 @@ export default function EmbeddingAnalyticsPage() {
         } finally {
             setLoading(false);
         }
-    }, [range]);
+    }, [cacheMissOnly, range]);
 
     useEffect(() => {
         void loadAnalytics();
@@ -69,11 +70,25 @@ export default function EmbeddingAnalyticsPage() {
             </Header>
 
             <div className="flex-1 p-6">
+                <div className="mb-4 flex flex-col items-start gap-1 rounded-lg border px-3 py-2 lg:w-fit">
+                    <label htmlFor="embedding-cache-miss-only" className="flex items-center gap-2 text-sm font-medium">
+                        <input
+                            id="embedding-cache-miss-only"
+                            type="checkbox"
+                            checked={cacheMissOnly}
+                            onChange={event => setCacheMissOnly(event.target.checked)}
+                            className="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        />
+                        <span>Only cache misses</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">Applies to Embedding Analytics only.</p>
+                </div>
                 <EmbeddingAnalyticsSection
                     analytics={analytics}
                     loading={loading}
                     error={error}
                     range={range}
+                    cacheMissOnly={cacheMissOnly}
                     onRetry={() => void loadAnalytics()}
                 />
             </div>

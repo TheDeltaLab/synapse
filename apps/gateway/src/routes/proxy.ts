@@ -112,6 +112,9 @@ interface EmbeddingLogParams {
     latency: number | null;
     statusCode: number;
     tokens?: number | null;
+    cached?: boolean;
+    cacheType?: CacheType;
+    cacheTtl?: number;
 }
 
 /**
@@ -236,6 +239,8 @@ export async function handleProxy(c: Context): Promise<Response> {
                 adapter,
                 startTime,
                 apiKeyId: apiKey.id,
+                cacheHit,
+                cacheTtl,
             });
         }
 
@@ -366,13 +371,15 @@ interface EmbeddingResponseContext {
     adapter: { parseEmbeddingResponse: (body: string) => ParsedEmbeddingResponse };
     startTime: number;
     apiKeyId: string;
+    cacheHit: boolean;
+    cacheTtl: number;
 }
 
 async function handleEmbeddingResponse(
     _c: Context,
     ctx: EmbeddingResponseContext,
 ): Promise<Response> {
-    const { upstreamResponse, inputs, model, endpoint, adapter, startTime, apiKeyId } = ctx;
+    const { upstreamResponse, inputs, model, endpoint, adapter, startTime, apiKeyId, cacheHit, cacheTtl } = ctx;
 
     const responseBody = await upstreamResponse.text();
     const { tokens } = adapter.parseEmbeddingResponse(responseBody);
@@ -386,6 +393,9 @@ async function handleEmbeddingResponse(
         latency: Date.now() - startTime,
         statusCode: upstreamResponse.status,
         tokens,
+        cached: cacheHit,
+        cacheType: cacheHit ? 'exact' : 'none',
+        cacheTtl: cacheHit ? cacheTtl : undefined,
     });
 
     return new Response(responseBody, {
@@ -518,6 +528,9 @@ async function logEmbeddingRequest(params: EmbeddingLogParams): Promise<void> {
                 dimensions: null,
                 requestContent: params.inputs ? JSON.stringify(params.inputs) : null,
                 tokens: params.tokens ?? null,
+                cached: params.cached ?? false,
+                cacheType: params.cacheType ?? null,
+                cacheTtl: params.cacheTtl ?? null,
                 latency: params.latency,
                 statusCode: params.statusCode,
             },

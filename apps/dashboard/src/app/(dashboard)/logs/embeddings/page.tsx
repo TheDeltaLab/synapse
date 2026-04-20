@@ -130,19 +130,20 @@ export default function EmbeddingLogsPage() {
                                         <TableHead className="text-right">Inputs</TableHead>
                                         <TableHead className="text-right">Tokens</TableHead>
                                         <TableHead className="text-right">Latency</TableHead>
+                                        <TableHead>Cache</TableHead>
                                         <TableHead>Status</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {loading && logs.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                                            <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                                                 Loading...
                                             </TableCell>
                                         </TableRow>
                                     ) : logs.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                                            <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                                                 No embedding logs found
                                             </TableCell>
                                         </TableRow>
@@ -169,6 +170,13 @@ export default function EmbeddingLogsPage() {
                                                 </TableCell>
                                                 <TableCell className="text-right text-sm">
                                                     {log.latency ? `${log.latency}ms` : '-'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {log.cached ? (
+                                                        <Badge variant="outline">{log.cacheType ?? 'cached'}</Badge>
+                                                    ) : (
+                                                        <span className="text-sm text-muted-foreground">-</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant={log.statusCode === 200 ? 'success' : 'destructive'}>

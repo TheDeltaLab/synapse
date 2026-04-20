@@ -81,6 +81,11 @@ model EmbeddingLog {
   // Usage stats
   tokens      Int?     // Token consumption
 
+  // Cache tracking
+  cached      Boolean  @default(false)
+  cacheType   String?  // 'semantic', 'exact', 'none'
+  cacheTtl    Int?
+
   // Performance metrics
   latency     Int?     // Latency in milliseconds
   statusCode  Int      // HTTP status code
@@ -91,6 +96,7 @@ model EmbeddingLog {
   @@index([apiKeyId, createdAt])
   @@index([provider, model])
   @@index([createdAt])
+  @@index([cached])
   @@map("embedding_logs")
 }
 

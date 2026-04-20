@@ -145,7 +145,7 @@ describe('admin analytics routes', () => {
         expect(body.successRate).toBe(40);
     });
 
-    it('applies embedding apiKeyId filter while keeping statusCode=200', async () => {
+    it('applies embedding apiKeyId and cacheMissOnly filters while keeping statusCode=200', async () => {
         const apiKeyId = '550e8400-e29b-41d4-a716-446655440000';
         mockEmbeddingLogCount.mockResolvedValue(4);
         mockEmbeddingLogFindMany.mockResolvedValue([
@@ -153,6 +153,7 @@ describe('admin analytics routes', () => {
                 provider: 'openai',
                 model: 'text-embedding-3-small',
                 tokens: 30,
+                cached: false,
                 latency: 80,
                 createdAt: new Date('2026-04-14T10:00:00Z'),
             },
@@ -160,19 +161,21 @@ describe('admin analytics routes', () => {
                 provider: 'openai',
                 model: 'text-embedding-3-small',
                 tokens: 20,
+                cached: false,
                 latency: 60,
                 createdAt: new Date('2026-04-14T10:01:00Z'),
             },
         ]);
 
-        const res = await app.request(`/admin/logs/embeddings/analytics?range=7d&apiKeyId=${apiKeyId}`);
-        const body = await res.json() as { successRate?: number; totalResponses?: number };
+        const res = await app.request(`/admin/logs/embeddings/analytics?range=7d&apiKeyId=${apiKeyId}&cacheMissOnly=true`);
+        const body = await res.json() as { successRate?: number; totalResponses?: number; cacheHitRate?: number };
 
         expect(res.status).toBe(200);
         expect(mockEmbeddingLogFindMany).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({
                 statusCode: 200,
                 apiKeyId,
+                cached: false,
                 createdAt: expect.objectContaining({
                     gte: expect.any(Date),
                     lte: expect.any(Date),
@@ -182,6 +185,7 @@ describe('admin analytics routes', () => {
         expect(mockEmbeddingLogCount).toHaveBeenCalledWith({
             where: expect.objectContaining({
                 apiKeyId,
+                cached: false,
                 createdAt: expect.objectContaining({
                     gte: expect.any(Date),
                     lte: expect.any(Date),
@@ -190,6 +194,46 @@ describe('admin analytics routes', () => {
         });
         expect(body.totalResponses).toBe(4);
         expect(body.successRate).toBe(50);
+        expect(body.cacheHitRate).toBe(0);
+    });
+
+    it('filters embedding logs by cached and returns cache metadata', async () => {
+        mockEmbeddingLogCount.mockResolvedValue(1);
+        mockEmbeddingLogFindMany.mockResolvedValue([
+            {
+                id: '123e4567-e89b-12d3-a456-426614174000',
+                apiKeyId: '123e4567-e89b-12d3-a456-426614174001',
+                provider: 'openai',
+                model: 'text-embedding-3-small',
+                inputCount: 1,
+                dimensions: null,
+                requestContent: '["hello"]',
+                tokens: 10,
+                cached: true,
+                cacheType: 'exact',
+                cacheTtl: 300,
+                latency: 100,
+                statusCode: 200,
+                createdAt: new Date('2026-04-14T10:00:00Z'),
+            },
+        ]);
+
+        const res = await app.request('/admin/logs/embeddings?page=1&limit=20&cached=true');
+        const body = await res.json() as { logs?: Array<{ cached: boolean; cacheType: string | null; cacheTtl: number | null }> };
+
+        expect(res.status).toBe(200);
+        expect(mockEmbeddingLogFindMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({
+                cached: true,
+            }),
+        }));
+        expect(body.logs).toEqual([
+            expect.objectContaining({
+                cached: true,
+                cacheType: 'exact',
+                cacheTtl: 300,
+            }),
+        ]);
     });
 
     it('rejects invalid analytics query parameters', async () => {

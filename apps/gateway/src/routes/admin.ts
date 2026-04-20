@@ -633,6 +633,7 @@ admin.get('/logs/embeddings/analytics', async (c) => {
     const queryParams = {
         range: c.req.query('range') || '24h',
         apiKeyId: c.req.query('apiKeyId'),
+        cacheMissOnly: c.req.query('cacheMissOnly'),
     };
 
     const parsed = embeddingAnalyticsQuerySchema.safeParse(queryParams);
@@ -647,7 +648,7 @@ admin.get('/logs/embeddings/analytics', async (c) => {
         );
     }
 
-    const { range, apiKeyId } = parsed.data;
+    const { range, apiKeyId, cacheMissOnly } = parsed.data;
 
     const now = new Date();
     const startDate = getStartDateFromRange(range);
@@ -657,6 +658,10 @@ admin.get('/logs/embeddings/analytics', async (c) => {
 
     if (apiKeyId) {
         baseWhere.apiKeyId = apiKeyId;
+    }
+
+    if (cacheMissOnly) {
+        baseWhere.cached = false;
     }
 
     const where = {
@@ -672,6 +677,7 @@ admin.get('/logs/embeddings/analytics', async (c) => {
                 provider: true,
                 model: true,
                 tokens: true,
+                cached: true,
                 latency: true,
                 createdAt: true,
             },
@@ -681,6 +687,8 @@ admin.get('/logs/embeddings/analytics', async (c) => {
 
     const totalRequests = logs.length;
     const successRate = totalResponses > 0 ? (totalRequests / totalResponses) * 100 : 0;
+    const cachedRequests = logs.filter(l => l.cached).length;
+    const cacheHitRate = totalRequests > 0 ? (cachedRequests / totalRequests) * 100 : 0;
     const uniqueProviders = new Set(logs.map(l => l.provider)).size;
     const uniqueModels = new Set(logs.map(l => l.model)).size;
 
@@ -772,6 +780,7 @@ admin.get('/logs/embeddings/analytics', async (c) => {
         totalRequests,
         totalResponses,
         successRate,
+        cacheHitRate,
         totalTokens,
         avgLatency,
         uniqueProviders,
@@ -792,6 +801,7 @@ admin.get('/logs/embeddings', async (c) => {
         limit: c.req.query('limit'),
         provider: c.req.query('provider'),
         model: c.req.query('model'),
+        cached: c.req.query('cached'),
         startDate: c.req.query('startDate'),
         endDate: c.req.query('endDate'),
         apiKeyId: c.req.query('apiKeyId'),
@@ -809,12 +819,13 @@ admin.get('/logs/embeddings', async (c) => {
         );
     }
 
-    const { page, limit, provider, model, startDate, endDate, apiKeyId } = parsed.data;
+    const { page, limit, provider, model, cached, startDate, endDate, apiKeyId } = parsed.data;
 
     // Build where clause
     const where: Record<string, unknown> = {};
     if (provider) where.provider = provider;
     if (model) where.model = model;
+    if (cached !== undefined) where.cached = cached === 'true';
     if (apiKeyId) where.apiKeyId = apiKeyId;
     if (startDate || endDate) {
         where.createdAt = {};
@@ -837,6 +848,9 @@ admin.get('/logs/embeddings', async (c) => {
                 dimensions: true,
                 requestContent: true,
                 tokens: true,
+                cached: true,
+                cacheType: true,
+                cacheTtl: true,
                 latency: true,
                 statusCode: true,
                 createdAt: true,
@@ -848,6 +862,7 @@ admin.get('/logs/embeddings', async (c) => {
     return c.json({
         logs: logs.map(log => ({
             ...log,
+            cacheType: log.cacheType,
             createdAt: log.createdAt.toISOString(),
         })),
         total,
