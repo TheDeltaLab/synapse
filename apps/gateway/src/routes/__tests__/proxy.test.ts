@@ -113,8 +113,16 @@ vi.mock('../../middleware/cache.js', () => ({
 }));
 
 // Mock redis service
+const { mockRedisAvailability } = vi.hoisted(() => ({
+    mockRedisAvailability: { value: false },
+}));
+
 vi.mock('../../services/redis-service.js', () => ({
-    redisService: { available: false },
+    redisService: {
+        get available() {
+            return mockRedisAvailability.value;
+        },
+    },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -128,6 +136,7 @@ describe('handleProxy', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockRedisAvailability.value = false;
         app = new Hono();
         // Set up mock apiKey context
         app.use('*', async (c, next) => {
@@ -260,6 +269,51 @@ describe('handleProxy', () => {
                     inputCount: 1,
                     requestContent: JSON.stringify(['Hello, world!']),
                     tokens: 5,
+                    cached: false,
+                    cacheType: 'none',
+                    cacheTtl: null,
+                }),
+            }));
+        });
+
+        it('logs cache metadata for cached embedding responses', async () => {
+            const { prisma } = await import('@synapse/dal');
+            const { cachedFetch } = await import('../../middleware/cache.js');
+
+            mockRedisAvailability.value = true;
+            vi.mocked(cachedFetch).mockResolvedValue({
+                response: new Response(JSON.stringify({
+                    object: 'list',
+                    data: [{ object: 'embedding', index: 0, embedding: [0.1, 0.2] }],
+                    model: 'text-embedding-3-small',
+                    usage: { prompt_tokens: 5, total_tokens: 5 },
+                }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+                cacheHit: true,
+                cacheKey: 'embedding-cache-key',
+                cacheTtl: 300,
+            });
+
+            const res = await app.request('/v1/embeddings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'text-embedding-3-small',
+                    input: 'Hello, world!',
+                }),
+            });
+
+            expect(res.status).toBe(200);
+
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(prisma.embeddingLog.create).toHaveBeenCalledWith(expect.objectContaining({
+                data: expect.objectContaining({
+                    cached: true,
+                    cacheType: 'exact',
+                    cacheTtl: 300,
                 }),
             }));
         });

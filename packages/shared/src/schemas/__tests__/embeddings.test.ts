@@ -320,6 +320,9 @@ describe('embeddingLogItemSchema', () => {
         dimensions: 1536,
         requestContent: '["Hello, world!","Test input"]',
         tokens: 100,
+        cached: true,
+        cacheType: 'exact',
+        cacheTtl: 300,
         latency: 150,
         statusCode: 200,
         createdAt: '2024-01-15T10:30:00Z',
@@ -336,6 +339,8 @@ describe('embeddingLogItemSchema', () => {
             dimensions: null,
             requestContent: null,
             tokens: null,
+            cacheType: null,
+            cacheTtl: null,
             latency: null,
         });
         expect(result.success).toBe(true);
@@ -390,6 +395,7 @@ describe('embeddingLogsQuerySchema', () => {
             limit: 50,
             provider: 'openai',
             model: 'text-embedding-3-small',
+            cached: 'true',
         });
         expect(result.success).toBe(true);
     });
@@ -463,6 +469,9 @@ describe('embeddingLogListResponseSchema', () => {
                     dimensions: null,
                     requestContent: '["Hello"]',
                     tokens: 10,
+                    cached: false,
+                    cacheType: 'none',
+                    cacheTtl: null,
                     latency: 100,
                     statusCode: 200,
                     createdAt: '2024-01-15T10:30:00Z',
@@ -575,6 +584,17 @@ describe('embeddingAnalyticsQuerySchema', () => {
         }
     });
 
+    it('should accept cacheMissOnly query parameter', () => {
+        const result = embeddingAnalyticsQuerySchema.safeParse({
+            cacheMissOnly: 'true',
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.data.cacheMissOnly).toBe(true);
+        }
+    });
+
     it('should accept a valid apiKeyId', () => {
         const result = embeddingAnalyticsQuerySchema.safeParse({
             apiKeyId: '550e8400-e29b-41d4-a716-446655440000',
@@ -597,6 +617,7 @@ describe('embeddingAnalyticsResponseSchema', () => {
         totalRequests: 10000,
         totalResponses: 12000,
         successRate: 83.33333333333334,
+        cacheHitRate: 62.5,
         totalTokens: 500000,
         avgLatency: 150.5,
         uniqueProviders: 2,
@@ -638,6 +659,7 @@ describe('embeddingAnalyticsResponseSchema', () => {
             totalRequests: 0,
             totalResponses: 0,
             successRate: 0,
+            cacheHitRate: 0,
             totalTokens: 0,
             avgLatency: null,
             uniqueProviders: 0,

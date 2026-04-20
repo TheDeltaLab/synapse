@@ -147,6 +147,7 @@ class GatewayClient {
         if (query?.limit) params.set('limit', query.limit.toString());
         if (query?.provider) params.set('provider', query.provider);
         if (query?.model) params.set('model', query.model);
+        if (query?.cached !== undefined) params.set('cached', query.cached);
         if (query?.startDate) params.set('startDate', query.startDate);
         if (query?.endDate) params.set('endDate', query.endDate);
         if (query?.apiKeyId) params.set('apiKeyId', query.apiKeyId);
@@ -173,6 +174,7 @@ class GatewayClient {
         const params = new URLSearchParams();
         if (query?.range) params.set('range', query.range);
         if (query?.apiKeyId) params.set('apiKeyId', query.apiKeyId);
+        if (query?.cacheMissOnly !== undefined) params.set('cacheMissOnly', query.cacheMissOnly.toString());
 
         const url = `${this.baseUrl}/admin/logs/embeddings/analytics${params.toString() ? `?${params.toString()}` : ''}`;
         const response = await fetch(url);

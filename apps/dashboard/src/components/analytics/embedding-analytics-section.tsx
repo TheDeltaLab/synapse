@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, CheckCircle2, Cpu, Database, Hash } from 'lucide-react';
+import { Activity, CheckCircle2, Cpu, Database, Zap } from 'lucide-react';
 import {
     Bar,
     BarChart,
@@ -24,6 +24,7 @@ interface EmbeddingAnalyticsSectionProps {
     loading: boolean;
     error: string | null;
     range: AnalyticsRange;
+    cacheMissOnly?: boolean;
     onRetry?: () => void;
 }
 
@@ -32,6 +33,7 @@ export function EmbeddingAnalyticsSection({
     loading,
     error,
     range,
+    cacheMissOnly = false,
     onRetry,
 }: EmbeddingAnalyticsSectionProps) {
     if (error) {
@@ -95,12 +97,21 @@ export function EmbeddingAnalyticsSection({
                     icon={Cpu}
                     description="Response time"
                 />
-                <StatCard
-                    title="Unique Models"
-                    value={analytics.uniqueModels.toString()}
-                    icon={Hash}
-                    description={`${analytics.uniqueProviders} provider${analytics.uniqueProviders !== 1 ? 's' : ''}`}
-                />
+                {cacheMissOnly ? (
+                    <StatCard
+                        title="Cache Scope"
+                        value="Misses only"
+                        icon={Zap}
+                        description="Cached responses excluded"
+                    />
+                ) : (
+                    <StatCard
+                        title="Cache Hit Rate"
+                        value={`${analytics.cacheHitRate.toFixed(1)}%`}
+                        icon={Zap}
+                        description="Cached responses"
+                    />
+                )}
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
