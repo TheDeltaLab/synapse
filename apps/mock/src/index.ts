@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import type { ServerType } from '@hono/node-server';
+import { alibabaApp } from './providers/alibaba.js';
 import { anthropicApp } from './providers/anthropic.js';
 import { googleApp } from './providers/google.js';
 import { openaiApp } from './providers/openai.js';
@@ -10,6 +11,7 @@ const OPENAI_PORT = parseInt(process.env.MOCK_OPENAI_PORT ?? '9001', 10);
 const ANTHROPIC_PORT = parseInt(process.env.MOCK_ANTHROPIC_PORT ?? '9002', 10);
 const GOOGLE_PORT = parseInt(process.env.MOCK_GOOGLE_PORT ?? '9003', 10);
 const OPENROUTER_PORT = parseInt(process.env.MOCK_OPENROUTER_PORT ?? '9004', 10);
+const ALIBABA_PORT = parseInt(process.env.MOCK_ALIBABA_PORT ?? '9005', 10);
 
 const servers: ServerType[] = [];
 
@@ -45,6 +47,16 @@ servers.push(
 servers.push(
     serve({ fetch: openrouterApp.fetch, port: OPENROUTER_PORT }, () => {
         console.log(`Mock OpenRouter running on http://localhost:${OPENROUTER_PORT}`);
+        console.log(`  GET  /health`);
+        console.log(`  GET  /v1/models`);
+        console.log(`  POST /v1/chat/completions`);
+        console.log(`  POST /v1/embeddings`);
+    }),
+);
+
+servers.push(
+    serve({ fetch: alibabaApp.fetch, port: ALIBABA_PORT }, () => {
+        console.log(`Mock Alibaba   running on http://localhost:${ALIBABA_PORT}`);
         console.log(`  GET  /health`);
         console.log(`  GET  /v1/models`);
         console.log(`  POST /v1/chat/completions`);
