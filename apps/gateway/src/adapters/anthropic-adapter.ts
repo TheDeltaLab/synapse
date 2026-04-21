@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage, RouteMatch } from './types.js';
+import { summarizeContent } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -26,14 +27,7 @@ export class AnthropicAdapter implements ProviderAdapter {
                     stream: body.stream ?? false,
                     messages: body.messages.map((m: any) => ({
                         role: String(m.role ?? ''),
-                        content: typeof m.content === 'string'
-                            ? m.content
-                            : Array.isArray(m.content)
-                                ? (m.content as any[])
-                                        .filter((b: any) => b.type === 'text')
-                                        .map((b: any) => b.text as string)
-                                        .join('')
-                                : JSON.stringify(m.content),
+                        content: summarizeContent(m.content),
                     })),
                 };
             }

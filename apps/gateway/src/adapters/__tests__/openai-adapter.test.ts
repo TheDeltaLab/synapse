@@ -25,7 +25,7 @@ describe('OpenAIAdapter', () => {
             ]);
         });
 
-        it('should stringify non-string message content', () => {
+        it('should summarize multi-modal content blocks for logging', () => {
             const body = JSON.stringify({
                 model: 'gpt-4o',
                 messages: [
@@ -35,7 +35,26 @@ describe('OpenAIAdapter', () => {
 
             const result = adapter.parseRequest(body);
             expect(result.type).toBe('chat');
-            expect(result.messages![0]!.content).toBe(JSON.stringify([{ type: 'text', text: 'hi' }]));
+            expect(result.messages![0]!.content).toBe('hi');
+        });
+
+        it('should replace audio and image blocks with placeholders', () => {
+            const body = JSON.stringify({
+                model: 'gpt-4o',
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: 'Describe this: ' },
+                            { type: 'input_audio', input_audio: { data: 'base64...', format: 'wav' } },
+                            { type: 'image_url', image_url: { url: 'https://example.com/img.png' } },
+                        ],
+                    },
+                ],
+            });
+
+            const result = adapter.parseRequest(body);
+            expect(result.messages![0]!.content).toBe('Describe this: [audio][image]');
         });
 
         it('should parse an embedding request with string input', () => {

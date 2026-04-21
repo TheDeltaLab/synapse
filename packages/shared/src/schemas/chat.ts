@@ -1,9 +1,37 @@
 import { z } from 'zod';
 
+// Multi-modal content block schemas
+export const textContentBlockSchema = z.object({
+    type: z.literal('text'),
+    text: z.string(),
+});
+
+export const audioContentBlockSchema = z.object({
+    type: z.literal('input_audio'),
+    input_audio: z.object({
+        data: z.string(),
+        format: z.enum(['wav', 'mp3', 'flac', 'ogg', 'pcm', 'm4a', 'aac', 'opus', 'wma']),
+    }),
+});
+
+export const imageContentBlockSchema = z.object({
+    type: z.literal('image_url'),
+    image_url: z.object({
+        url: z.string(),
+        detail: z.enum(['auto', 'low', 'high']).optional(),
+    }),
+});
+
+export const contentBlockSchema = z.discriminatedUnion('type', [
+    textContentBlockSchema,
+    audioContentBlockSchema,
+    imageContentBlockSchema,
+]);
+
 // Chat message schema
 export const chatMessageSchema = z.object({
     role: z.enum(['system', 'user', 'assistant', 'function']),
-    content: z.string(),
+    content: z.union([z.string(), z.array(contentBlockSchema)]),
     name: z.string().optional(),
 });
 
@@ -15,11 +43,15 @@ export const chatCompletionRequestSchema = z.object({
     top_p: z.number().min(0).max(1).optional(),
     n: z.number().int().positive().optional(),
     stream: z.boolean().optional(),
+    stream_options: z.object({
+        include_usage: z.boolean().optional(),
+    }).optional(),
     stop: z.union([z.string(), z.array(z.string())]).optional(),
     max_tokens: z.number().int().positive().optional(),
     presence_penalty: z.number().min(-2).max(2).optional(),
     frequency_penalty: z.number().min(-2).max(2).optional(),
     user: z.string().optional(),
+    modalities: z.array(z.enum(['text', 'audio'])).optional(),
 });
 
 // Retry configuration schema

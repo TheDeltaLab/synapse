@@ -177,6 +177,14 @@ describe('providers config', () => {
         expect(deployment?.isDefault).toBe(true);
     });
 
+    it('declares Alibaba qwen3.5-omni-plus chat deployment', () => {
+        const deployment = getDeployment('alibaba', 'qwen3.5-omni-plus', 'chat');
+
+        expect(deployment).toBeDefined();
+        expect(deployment?.modelId).toBe('qwen3.5-omni-plus');
+        expect(deployment?.isDefault).toBe(true);
+    });
+
     it('declares DeepSeek chat deployment with upstream model name', () => {
         const deployment = getDeployment('deepseek', 'deepseek-chat', 'chat');
 
@@ -211,6 +219,9 @@ describe('providers config', () => {
             'deepseek-chat',
             'deepseek-reasoner',
         ]);
+        expect(getChatDeployments('alibaba').map(deployment => deployment.modelId)).toEqual([
+            'qwen3.5-omni-plus',
+        ]);
         expect(getEmbeddingDeployments('openrouter').map(deployment => deployment.modelId)).toEqual([
             'qwen/qwen3-embedding-8b',
             'qwen/qwen3-embedding-4b',
@@ -228,6 +239,7 @@ describe('providers config', () => {
         expect(getDefaultChatModel('google')).toBe('gemini-2.0-flash-exp');
         expect(getDefaultChatModel('openrouter')).toBe('gpt-5-mini');
         expect(getDefaultChatModel('deepseek')).toBe('deepseek-chat');
+        expect(getDefaultChatModel('alibaba')).toBe('qwen3.5-omni-plus');
         expect(getDefaultEmbeddingModel('openrouter')).toBe('qwen/qwen3-embedding-8b');
         expect(getDefaultEmbeddingModel('alibaba')).toBe('text-embedding-v4');
         expect(getDefaultEmbeddingModel('anthropic')).toBeNull();

@@ -219,6 +219,13 @@ export const deployments = [
         task: 'chat',
     },
     {
+        id: 'alibaba:qwen3.5-omni-plus:chat',
+        providerId: 'alibaba',
+        modelId: 'qwen3.5-omni-plus',
+        task: 'chat',
+        isDefault: true,
+    },
+    {
         id: 'alibaba:text-embedding-v4:embedding',
         providerId: 'alibaba',
         modelId: 'text-embedding-v4',

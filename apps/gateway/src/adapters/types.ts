@@ -39,3 +39,24 @@ export interface ProviderAdapter {
     parseStreamingResponse(ssePayload: string): ParsedResponse;
     parseEmbeddingResponse(responseBody: string): ParsedEmbeddingResponse;
 }
+
+/**
+ * Summarize a multi-modal content value for logging.
+ * Replaces binary-heavy blocks (audio, images) with lightweight placeholders
+ * so that logs stay readable and storage stays small.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function summarizeContent(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return JSON.stringify(content);
+
+    return (content as Record<string, unknown>[])
+        .map((block) => {
+            const type = block.type as string | undefined;
+            if (type === 'text') return (block.text as string) ?? '';
+            if (type === 'input_audio') return '[audio]';
+            if (type === 'image_url' || type === 'image') return '[image]';
+            return `[${type ?? 'unknown'}]`;
+        })
+        .join('');
+}
