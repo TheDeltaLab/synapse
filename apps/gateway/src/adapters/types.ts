@@ -45,10 +45,16 @@ export interface ProviderAdapter {
  * Replaces binary-heavy blocks (audio, images) with lightweight placeholders
  * so that logs stay readable and storage stays small.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function summarizeContent(content: unknown): string {
+    if (content == null) return '';
     if (typeof content === 'string') return content;
-    if (!Array.isArray(content)) return JSON.stringify(content);
+    if (!Array.isArray(content)) {
+        try {
+            return JSON.stringify(content) ?? String(content);
+        } catch {
+            return String(content);
+        }
+    }
 
     return (content as Record<string, unknown>[])
         .map((block) => {
