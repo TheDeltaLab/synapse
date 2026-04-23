@@ -36,8 +36,11 @@ export class GoogleAdapter implements ProviderAdapter {
                         role: String(c.role ?? ''),
                         content: Array.isArray(c.parts)
                             ? (c.parts as any[])
-                                    .filter((p: any) => typeof p.text === 'string')
-                                    .map((p: any) => p.text as string)
+                                    .map((p: any) => {
+                                        if (typeof p.text === 'string') return p.text;
+                                        if (p.inlineData) return '[media]';
+                                        return '[unknown]';
+                                    })
                                     .join('')
                             : '',
                     })),

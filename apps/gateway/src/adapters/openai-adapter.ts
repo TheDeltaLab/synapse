@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ParsedResponse, ParsedRequest, ParsedEmbeddingResponse, TokenUsage, RouteMatch } from './types.js';
+import { summarizeContent } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -29,7 +30,7 @@ export class OpenAIAdapter implements ProviderAdapter {
                     stream: body.stream ?? false,
                     messages: body.messages.map((m: any) => ({
                         role: String(m.role ?? ''),
-                        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+                        content: summarizeContent(m.content),
                     })),
                 };
             }

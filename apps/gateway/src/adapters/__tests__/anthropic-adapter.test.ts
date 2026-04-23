@@ -23,7 +23,7 @@ describe('AnthropicAdapter', () => {
             ]);
         });
 
-        it('should join text blocks from content array', () => {
+        it('should join text blocks and replace non-text blocks with placeholders', () => {
             const body = JSON.stringify({
                 model: 'claude-sonnet-4-20250514',
                 messages: [
@@ -40,7 +40,7 @@ describe('AnthropicAdapter', () => {
 
             const result = adapter.parseRequest(body);
             expect(result.type).toBe('chat');
-            expect(result.messages![0]!.content).toBe('Part 1Part 2');
+            expect(result.messages![0]!.content).toBe('Part 1[image]Part 2');
         });
 
         it('should return unknown for body without messages', () => {
