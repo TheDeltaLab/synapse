@@ -211,7 +211,6 @@ export const deployments = [
         providerId: 'deepseek',
         modelId: 'deepseek-chat',
         task: 'chat',
-        isDefault: true,
         deprecated: true,
     },
     {
@@ -226,6 +225,7 @@ export const deployments = [
         providerId: 'deepseek',
         modelId: 'deepseek-v4-flash',
         task: 'chat',
+        isDefault: true,
     },
     {
         id: 'deepseek:deepseek-v4-pro:chat',
