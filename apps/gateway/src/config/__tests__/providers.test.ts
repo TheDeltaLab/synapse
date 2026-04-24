@@ -218,6 +218,8 @@ describe('providers config', () => {
         expect(getChatDeployments('deepseek').map(deployment => deployment.modelId)).toEqual([
             'deepseek-chat',
             'deepseek-reasoner',
+            'deepseek-v4-flash',
+            'deepseek-v4-pro',
         ]);
         expect(getChatDeployments('alibaba').map(deployment => deployment.modelId)).toEqual([
             'qwen3.5-omni-plus',
