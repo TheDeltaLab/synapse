@@ -88,7 +88,7 @@ jobs:
       - name: Detect changes
         id: changes
         run: |
-          DOCKER_APPS=("gateway" "dashboard")
+          DOCKER_APPS=("gateway" "dashboard" "mock")
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             # Manual trigger — use inputs directly
