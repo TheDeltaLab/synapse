@@ -1,0 +1,29 @@
+name: synapse-mock
+type: KubernetesApp
+
+dependencies:
+  - resource: KubernetesServiceAccount.synapse-workload-sa
+    isHardDependency: true
+  - resource: KubernetesConfigMap.synapse-shared-config
+    isHardDependency: true
+
+defaultConfig:
+  namespace: synapse
+  image: ghcr.io/thedeltalab/synapse/mock:nightly
+  port: 9001
+  additionalPorts:
+    - 9002
+    - 9003
+    - 9004
+    - 9005
+  healthPath: /health
+  serviceAccountName: synapse-workload-sa
+  resources:
+    cpuRequest: "100m"
+    memoryRequest: 128Mi
+    cpuLimit: "250m"
+    memoryLimit: 256Mi
+  envFrom:
+    - configMapRef: synapse-shared-config
+  envVars:
+    - APP_ENV=${ this.ring }
