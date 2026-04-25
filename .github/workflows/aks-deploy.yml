@@ -79,6 +79,8 @@ jobs:
       merlin_changed: ${{ steps.changes.outputs.merlin_changed }}
       apps_matrix: ${{ steps.changes.outputs.apps_matrix }}
       has_apps: ${{ steps.changes.outputs.has_apps }}
+      deploy_apps_matrix: ${{ steps.changes.outputs.deploy_apps_matrix }}
+      has_deploy_apps: ${{ steps.changes.outputs.has_deploy_apps }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -88,7 +90,7 @@ jobs:
       - name: Detect changes
         id: changes
         run: |
-          DOCKER_APPS=("gateway" "dashboard")
+          DOCKER_APPS=("gateway" "dashboard" "mock")
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             # Manual trigger — use inputs directly
@@ -111,6 +113,7 @@ jobs:
               echo "apps_matrix=$APPS_JSON" >> $GITHUB_OUTPUT
               echo "has_apps=true" >> $GITHUB_OUTPUT
             else
+              APPS_JSON="[]"
               echo "apps_matrix=[]" >> $GITHUB_OUTPUT
               echo "has_apps=false" >> $GITHUB_OUTPUT
             fi
@@ -149,6 +152,16 @@ jobs:
             else
               echo "has_apps=false" >> $GITHUB_OUTPUT
             fi
+          fi
+
+          # Compute deploy matrix (exclude mock — it's build-only, not deployed)
+          DEPLOY_APPS_JSON=$(echo "$APPS_JSON" | jq -c '[.[] | select(. != "mock")]')
+          echo "deploy_apps_matrix=$DEPLOY_APPS_JSON" >> $GITHUB_OUTPUT
+          DEPLOY_COUNT=$(echo "$DEPLOY_APPS_JSON" | jq 'length')
+          if [[ "$DEPLOY_COUNT" -gt 0 ]]; then
+            echo "has_deploy_apps=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_deploy_apps=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Plan summary
@@ -353,7 +366,7 @@ jobs:
     # Always wait for build-images if it ran; tolerate skip/success.
     if: >-
       always() &&
-      needs.detect-changes.outputs.has_apps == 'true' &&
+      needs.detect-changes.outputs.has_deploy_apps == 'true' &&
       needs.deploy-resources.result != 'failure' &&
       (needs.build-images.result == 'success' || inputs.update_deployments == true) &&
       needs.build-images.result != 'failure'
@@ -362,7 +375,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJSON(needs.detect-changes.outputs.apps_matrix) }}
+        app: ${{ fromJSON(needs.detect-changes.outputs.deploy_apps_matrix) }}
 
     env:
       RING: ${{ inputs.ring || 'test' }}
