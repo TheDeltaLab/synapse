@@ -1,0 +1,32 @@
+name: synapse-redis
+type: AzureRedisEnterprise
+project: synapse
+
+dependencies:
+  - resource: AzureServicePrincipal.kv-workload
+    isHardDependency: true
+
+defaultConfig:
+  sku: Balanced_B1
+  location: ${ this.region }
+  publicNetworkAccess: Enabled
+
+  # Entra ID authentication (disable access keys)
+  # Pods authenticate via Workload Identity (kv-workload SP) using
+  # AAD token with scope https://redis.azure.com/.default
+  accessKeysAuth: Disabled
+
+  # Data-plane access policy
+  # Grant kv-workload SP access to Redis data via Entra ID.
+  accessPolicyAssignments:
+    - objectId: ${ AzureServicePrincipal.kv-workload.objectId }
+
+  tags:
+    merlin: "true"
+    env: ${ this.ring }
+    component: synapse-redis
+
+specificConfig: []
+
+exports:
+  redisUrl: AzureRedisEnterpriseUrl
