@@ -31,6 +31,7 @@ export interface Deployment {
     readonly task: ModelTask;
     readonly isDefault?: boolean;
     readonly enabled?: boolean;
+    readonly deprecated?: boolean;
 }
 
 function envOrDefault(key: string, defaultValue: string): string {
@@ -210,12 +211,26 @@ export const deployments = [
         providerId: 'deepseek',
         modelId: 'deepseek-chat',
         task: 'chat',
-        isDefault: true,
+        deprecated: true,
     },
     {
         id: 'deepseek:deepseek-reasoner:chat',
         providerId: 'deepseek',
         modelId: 'deepseek-reasoner',
+        task: 'chat',
+        deprecated: true,
+    },
+    {
+        id: 'deepseek:deepseek-v4-flash:chat',
+        providerId: 'deepseek',
+        modelId: 'deepseek-v4-flash',
+        task: 'chat',
+        isDefault: true,
+    },
+    {
+        id: 'deepseek:deepseek-v4-pro:chat',
+        providerId: 'deepseek',
+        modelId: 'deepseek-v4-pro',
         task: 'chat',
     },
     {
