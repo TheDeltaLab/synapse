@@ -4,6 +4,10 @@ type: KubernetesConfigMap
 dependencies:
   - resource: KubernetesCluster.aks
     isHardDependency: true
+  - resource: AzureRedisEnterprise.synapse-redis
+    isHardDependency: true
+  - resource: AzureServicePrincipal.kv-workload
+    isHardDependency: true
 
 defaultConfig:
   namespace: synapse
