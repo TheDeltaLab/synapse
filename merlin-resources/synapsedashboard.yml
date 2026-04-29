@@ -28,5 +28,5 @@ defaultConfig:
   envVars:
     - APP_ENV=${ this.ring }
   ingress:
-    subdomain: synapse
+    subdomain: synapse-dashboard
     dnsZone: thebrainly.dev
