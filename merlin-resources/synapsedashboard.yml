@@ -10,6 +10,8 @@ dependencies:
     isHardDependency: true
   - resource: KubernetesManifest.synapse-secret-provider
     isHardDependency: true
+  - resource: AzureServicePrincipal.synapse-aad
+    isHardDependency: true
 
 defaultConfig:
   namespace: synapse
@@ -30,3 +32,10 @@ defaultConfig:
   ingress:
     subdomain: synapse
     dnsZone: thebrainly.dev
+    annotations:
+      nginx.ingress.kubernetes.io/auth-url: "https://$host/oauth2/auth"
+      nginx.ingress.kubernetes.io/auth-signin: "https://$host/oauth2/start?rd=$escaped_request_uri"
+      nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User,X-Auth-Request-Email"
+    dependencies:
+      - resource: KubernetesIngress.synapse-oauth2-proxy
+        isHardDependency: true
