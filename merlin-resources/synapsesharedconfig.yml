@@ -8,9 +8,14 @@ dependencies:
 defaultConfig:
   namespace: synapse
   data:
-    NODE_ENV: ${ this.ring }
+    NODE_ENV: development
     GATEWAY_URL: http://synapse-gateway.synapse.svc.cluster.local:3000
     OPENAI_COMPATIBLE_API_BASE_URL: https://openrouter.ai/api/v1
+    REDIS_AUTH: AZURE_ENTRA_ID
+    CACHE_TTL: "604800"
+    ALIBABA_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode
+    OTEL_SERVICE_NAME: synapse-gateway
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://trinity-otel-collector.trinity.svc.cluster.local:4318
   labels:
     app.kubernetes.io/part-of: synapse
     managed-by: merlin
