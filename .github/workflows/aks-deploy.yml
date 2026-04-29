@@ -90,7 +90,7 @@ jobs:
       - name: Detect changes
         id: changes
         run: |
-          DOCKER_APPS=("gateway" "dashboard" "mock")
+          DOCKER_APPS=("gateway" "dashboard" "mock" "db-migrate")
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             # Manual trigger — use inputs directly
@@ -127,6 +127,14 @@ jobs:
             # Check which apps changed
             APPS=()
             for app in "${DOCKER_APPS[@]}"; do
+              # db-migrate tracks packages/dal/ instead of apps/
+              if [[ "$app" == "db-migrate" ]]; then
+                if echo "$CHANGED" | grep -q "^packages/dal/"; then
+                  APPS+=("$app")
+                  echo "App '$app' changed (packages/dal)"
+                fi
+                continue
+              fi
               if echo "$CHANGED" | grep -q "^apps/$app/"; then
                 APPS+=("$app")
                 echo "App '$app' changed (direct)"
@@ -155,7 +163,7 @@ jobs:
           fi
 
           # Compute deploy matrix (exclude mock — it's build-only, not deployed)
-          DEPLOY_APPS_JSON=$(echo "$APPS_JSON" | jq -c '[.[] | select(. != "mock")]')
+          DEPLOY_APPS_JSON=$(echo "$APPS_JSON" | jq -c '[.[] | select(. != "mock" and . != "db-migrate")]')
           echo "deploy_apps_matrix=$DEPLOY_APPS_JSON" >> $GITHUB_OUTPUT
           DEPLOY_COUNT=$(echo "$DEPLOY_APPS_JSON" | jq 'length')
           if [[ "$DEPLOY_COUNT" -gt 0 ]]; then
@@ -323,11 +331,19 @@ jobs:
             org.opencontainers.image.title=Synapse ${{ matrix.app }}
             org.opencontainers.image.vendor=Synapse
 
+      - name: Resolve Dockerfile path
+        id: dockerfile
+        run: |
+          case "${{ matrix.app }}" in
+            db-migrate) echo "path=packages/dal/Dockerfile" >> $GITHUB_OUTPUT ;;
+            *)          echo "path=apps/${{ matrix.app }}/Dockerfile" >> $GITHUB_OUTPUT ;;
+          esac
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          file: ${{ steps.dockerfile.outputs.path }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
           labels: ${{ steps.docker-meta.outputs.labels }}
@@ -336,7 +352,7 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VERSION=${{ steps.meta.outputs.image_tag }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
       - name: Summary
         if: always()
