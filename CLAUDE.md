@@ -264,3 +264,22 @@ The script checks:
 
 It will prompt to auto-fix any issues found.
 
+
+## Kubernetes Network Isolation (`merlin-resources/synapsenetworkpolicy.yml`)
+
+The `synapse` namespace runs **default-deny** for both ingress and egress, expressed via merlin's `KubernetesNetworkPolicy` DSL (see `merlin/CLAUDE.md` § "KubernetesNetworkPolicy Resource").
+
+Ingress allow-list:
+- `ingress-nginx → synapse-gateway:3000` — public HTTPS for the gateway
+- `ingress-nginx → synapse-dashboard:3001` — public HTTPS for the dashboard (behind oauth2-proxy auth)
+- `ingress-nginx → synapse-oauth2-proxy:4180` — OIDC sign-in flow
+- `trinity` namespace, but **only** pods labeled `app=trinity-worker`, `trinity-lance`, or `trinity-lance-worker` → `synapse-gateway:3000` — the only trinity callers per the platform call graph (trinity-web does NOT call synapse directly today)
+- `lovelace` namespace, pods labeled `app=lovelace` → `synapse-gateway:3000`
+- intra-namespace pod-to-pod (oauth2-proxy ↔ dashboard)
+
+Egress allow-list:
+- intra-namespace, kube-system DNS, observability (OTLP 4318), public internet (`0.0.0.0/0` minus RFC1918) — covers upstream LLM APIs (OpenRouter, Aliyun DashScope), Azure Redis Enterprise (`*.redis.azure.net:10000`), Azure KeyVault, AAD.
+
+`synapse-redis` is `AzureRedisEnterprise` (managed PaaS), not a pod — no NetworkPolicy ingress rule needed for it; it's reached via the public-internet egress allow.
+
+If a new caller needs to reach synapse, add a rule under `defaultConfig.ingress[]` rather than disabling the policy.

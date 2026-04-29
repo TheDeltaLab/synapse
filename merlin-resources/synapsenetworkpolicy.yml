@@ -1,0 +1,113 @@
+name: synapse-network-policy
+type: KubernetesNetworkPolicy
+
+# Default-deny + selective-allow for the synapse namespace, expressed in
+# merlin's high-level NetworkPolicy DSL. The render compiles this into
+# native networking.k8s.io/v1 NetworkPolicy manifests:
+#
+#   1. <name>-default-deny             (deny all ingress + egress, ns-wide)
+#   2. <name>-allow-dns                (UDP/TCP 53 → kube-system)
+#   3. <name>-allow-intra-namespace    (synapse pods ↔ synapse pods —
+#                                       covers oauth2-proxy → dashboard)
+#   4. <name>-allow-external-egress    (0.0.0.0/0 minus RFC1918 — OpenRouter,
+#                                       Aliyun DashScope, AAD, Azure Redis
+#                                       Enterprise *.redis.azure.net:10000,
+#                                       Azure Key Vault)
+#   5. <name>-gateway-from-nginx       (ingress-nginx → synapse-gateway:3000)
+#   6. <name>-dashboard-from-nginx     (ingress-nginx → synapse-dashboard:3001)
+#   7. <name>-oauth2-proxy-from-nginx  (ingress-nginx → oauth2-proxy:4180)
+#   8. <name>-gateway-from-trinity     (trinity-worker/lance/lance-worker →
+#                                       synapse-gateway:3000)
+#   9. <name>-gateway-from-lovelace    (lovelace → synapse-gateway:3000)
+#  10. <name>-to-otel                  (synapse → observability:4318)
+#
+# NOTE: synapse-redis is NOT a pod — it's AzureRedisEnterprise (managed
+# PaaS) at *.redis.azure.net:10000, reached via egress to public Azure.
+# No ingress rule needed.
+#
+# Engine prerequisite: AKS cluster must have `networkPolicy: azure`.
+
+dependencies:
+  - resource: KubernetesCluster.aks
+    isHardDependency: true
+
+defaultConfig:
+  namespace: synapse
+  # All three default to true; listed explicitly here for documentation.
+  defaultDeny: true
+  allowDns: true
+  allowIntraNamespace: true
+  # Pods need to reach upstream LLM APIs (OpenRouter, DashScope), Azure
+  # Redis Enterprise, Azure KeyVault, AAD on the public internet. Tighter
+  # per-domain allowlists are a follow-up.
+  allowExternalEgress: true
+
+  ingress:
+    - name: gateway-from-nginx
+      podSelector:
+        matchLabels:
+          app: synapse-gateway
+      from:
+        - namespace: ingress-nginx
+      ports:
+        - port: 3000
+
+    - name: dashboard-from-nginx
+      podSelector:
+        matchLabels:
+          app: synapse-dashboard
+      from:
+        - namespace: ingress-nginx
+      ports:
+        - port: 3001
+
+    - name: oauth2-proxy-from-nginx
+      podSelector:
+        matchLabels:
+          app: synapse-oauth2-proxy
+      from:
+        - namespace: ingress-nginx
+      ports:
+        - port: 4180
+
+    - name: gateway-from-trinity
+      # Per the platform call graph, trinity-worker, trinity-lance, and
+      # trinity-lance-worker all read SYNAPSE_URL → synapse-gateway:3000.
+      # trinity-web does NOT call synapse directly today — add it here if
+      # that changes.
+      podSelector:
+        matchLabels:
+          app: synapse-gateway
+      from:
+        - namespace: trinity
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - trinity-worker
+                  - trinity-lance
+                  - trinity-lance-worker
+      ports:
+        - port: 3000
+
+    - name: gateway-from-lovelace
+      # lovelace reads SYNAPSE_URL=http://synapse-gateway.synapse...:3000/v1
+      podSelector:
+        matchLabels:
+          app: synapse-gateway
+      from:
+        - namespace: lovelace
+          podSelector:
+            matchLabels:
+              app: lovelace
+      ports:
+        - port: 3000
+
+  egress:
+    - name: to-otel
+      # synapse pushes OTLP to otel-gateway in the observability ns.
+      to:
+        - namespace: observability
+      ports:
+        - port: 4318
