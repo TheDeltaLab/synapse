@@ -21,7 +21,11 @@ defaultConfig:
     CACHE_TTL: "604800"
     ALIBABA_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode
     OTEL_SERVICE_NAME: synapse-gateway
-    OTEL_EXPORTER_OTLP_ENDPOINT: http://trinity-otel-collector.trinity.svc.cluster.local:4318
+    # OTEL collector lives in the `observability` namespace, not `trinity`.
+    # The previous value pointed at a non-existent service, so all synapse
+    # OTLP traffic was being silently dropped (DNS NXDOMAIN, exporter is
+    # fail-open).
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-gateway.observability.svc.cluster.local:4318
   labels:
     app.kubernetes.io/part-of: synapse
     managed-by: merlin
