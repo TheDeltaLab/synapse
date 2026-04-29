@@ -61,4 +61,4 @@ USER synapse
 ENV NODE_ENV=production
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["npx", "prisma", "migrate", "deploy", "--schema", "packages/dal/prisma/schema.prisma"]
+CMD ["sh", "-c", "npx prisma migrate deploy --schema packages/dal/prisma/schema.prisma --url \"$DATABASE_URL\""]
