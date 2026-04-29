@@ -30,7 +30,7 @@ defaultConfig:
   envVars:
     - APP_ENV=${ this.ring }
   ingress:
-    subdomain: synapse
+    subdomain: synapse-dashboard
     dnsZone: thebrainly.dev
     annotations:
       nginx.ingress.kubernetes.io/auth-url: "https://$host/oauth2/auth"

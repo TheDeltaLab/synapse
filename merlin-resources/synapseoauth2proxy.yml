@@ -33,7 +33,7 @@ defaultConfig:
     - OAUTH2_PROXY_PROVIDER=oidc
     - OAUTH2_PROXY_OIDC_ISSUER_URL=https://login.microsoftonline.com/2c10b0b9-d9c1-4c81-85ee-6a2297ed77f4/v2.0
     - OAUTH2_PROXY_CLIENT_ID=${ AzureServicePrincipal.synapse-aad.clientId }
-    - OAUTH2_PROXY_REDIRECT_URL=https://synapse.${ this.ring }.thebrainly.dev/oauth2/callback
+    - OAUTH2_PROXY_REDIRECT_URL=https://synapse-dashboard.${ this.ring }.thebrainly.dev/oauth2/callback
     - OAUTH2_PROXY_UPSTREAM=static://202
     - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
     - OAUTH2_PROXY_EMAIL_DOMAINS=*
@@ -43,7 +43,7 @@ defaultConfig:
     - OAUTH2_PROXY_OIDC_EMAIL_CLAIM=preferred_username
     - OAUTH2_PROXY_SET_XAUTHREQUEST=true
   ingress:
-    subdomain: synapse
+    subdomain: synapse-dashboard
     dnsZone: thebrainly.dev
     path: /oauth2
     bindDnsZone: false

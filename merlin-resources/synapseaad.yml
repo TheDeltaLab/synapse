@@ -12,7 +12,7 @@ dependencies:
 defaultConfig:
   displayName: synapse-aad-${ this.ring }
   webRedirectUris:
-    - https://synapse.${ this.ring }.thebrainly.dev/oauth2/callback
+    - https://synapse-dashboard.${ this.ring }.thebrainly.dev/oauth2/callback
   assignmentRequired: true
   apiPermissions: oidc
 
