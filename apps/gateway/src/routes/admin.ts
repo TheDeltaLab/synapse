@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcrypt';
 import { Hono } from 'hono';
-import { prisma, decryptContent } from '@synapse/dal';
+import { prisma, decryptContent, decryptEmbeddingInputs } from '@synapse/dal';
 import {
     createApiKeySchema,
     updateApiKeySchema,
@@ -836,6 +836,8 @@ admin.get('/logs/embeddings', async (c) => {
                 inputCount: true,
                 dimensions: true,
                 requestContent: true,
+                requestContentIv: true,
+                requestContentTag: true,
                 tokens: true,
                 latency: true,
                 statusCode: true,
@@ -846,10 +848,26 @@ admin.get('/logs/embeddings', async (c) => {
     ]);
 
     return c.json({
-        logs: logs.map(log => ({
-            ...log,
-            createdAt: log.createdAt.toISOString(),
-        })),
+        logs: logs.map((log) => {
+            const inputs = decryptEmbeddingInputs(
+                log.requestContent,
+                log.requestContentIv,
+                log.requestContentTag,
+            );
+            return {
+                id: log.id,
+                apiKeyId: log.apiKeyId,
+                provider: log.provider,
+                model: log.model,
+                inputCount: log.inputCount,
+                dimensions: log.dimensions,
+                requestContent: inputs ? JSON.stringify(inputs) : null,
+                tokens: log.tokens,
+                latency: log.latency,
+                statusCode: log.statusCode,
+                createdAt: log.createdAt.toISOString(),
+            };
+        }),
         total,
         page,
         limit,
@@ -880,8 +898,24 @@ admin.get('/logs/embeddings/:id', async (c) => {
         );
     }
 
+    const inputs = decryptEmbeddingInputs(
+        log.requestContent,
+        log.requestContentIv,
+        log.requestContentTag,
+    );
+
     return c.json({
-        ...log,
+        id: log.id,
+        apiKeyId: log.apiKeyId,
+        apiKey: log.apiKey,
+        provider: log.provider,
+        model: log.model,
+        inputCount: log.inputCount,
+        dimensions: log.dimensions,
+        requestContent: inputs ? JSON.stringify(inputs) : null,
+        tokens: log.tokens,
+        latency: log.latency,
+        statusCode: log.statusCode,
         createdAt: log.createdAt.toISOString(),
     });
 });

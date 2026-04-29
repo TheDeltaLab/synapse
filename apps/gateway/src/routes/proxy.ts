@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { prisma, encryptContent, isEncryptionConfigured } from '@synapse/dal';
+import { prisma, encryptContent, encryptEmbeddingInputs, isEncryptionConfigured } from '@synapse/dal';
 import { HTTP_STATUS, type CacheType } from '@synapse/shared';
 import { getProviderAdapter } from '../adapters/index.js';
 import type { ParsedResponse, ParsedEmbeddingResponse, ChatMessage } from '../adapters/types.js';
@@ -112,6 +112,7 @@ interface EmbeddingLogParams {
     latency: number | null;
     statusCode: number;
     tokens?: number | null;
+    dimensions?: number | null;
 }
 
 /**
@@ -232,6 +233,7 @@ export async function handleProxy(c: Context): Promise<Response> {
                 upstreamResponse,
                 inputs: parsedReq.inputs ?? null,
                 model: parsedReq.model ?? model ?? null,
+                requestedDimensions: parsedReq.dimensions ?? null,
                 endpoint,
                 adapter,
                 startTime,
@@ -362,6 +364,7 @@ interface EmbeddingResponseContext {
     upstreamResponse: Response;
     inputs: string[] | null;
     model: string | null;
+    requestedDimensions: number | null;
     endpoint: { providerId: string };
     adapter: { parseEmbeddingResponse: (body: string) => ParsedEmbeddingResponse };
     startTime: number;
@@ -372,10 +375,10 @@ async function handleEmbeddingResponse(
     _c: Context,
     ctx: EmbeddingResponseContext,
 ): Promise<Response> {
-    const { upstreamResponse, inputs, model, endpoint, adapter, startTime, apiKeyId } = ctx;
+    const { upstreamResponse, inputs, model, requestedDimensions, endpoint, adapter, startTime, apiKeyId } = ctx;
 
     const responseBody = await upstreamResponse.text();
-    const { tokens } = adapter.parseEmbeddingResponse(responseBody);
+    const { tokens, dimensions: parsedDimensions } = adapter.parseEmbeddingResponse(responseBody);
 
     logEmbeddingRequest({
         apiKeyId,
@@ -386,6 +389,7 @@ async function handleEmbeddingResponse(
         latency: Date.now() - startTime,
         statusCode: upstreamResponse.status,
         tokens,
+        dimensions: requestedDimensions ?? parsedDimensions ?? null,
     });
 
     return new Response(responseBody, {
@@ -509,14 +513,20 @@ async function logChatRequest(params: ChatLogParams): Promise<void> {
 
 async function logEmbeddingRequest(params: EmbeddingLogParams): Promise<void> {
     try {
+        const encrypted = encryptEmbeddingInputs(params.inputs);
         await prisma.embeddingLog.create({
             data: {
                 apiKeyId: params.apiKeyId,
                 provider: params.provider ?? 'unknown',
                 model: params.model ?? 'unknown',
                 inputCount: params.inputs?.length ?? 0,
-                dimensions: null,
-                requestContent: params.inputs ? JSON.stringify(params.inputs) : null,
+                dimensions: params.dimensions ?? null,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+                requestContent: encrypted.requestContent,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+                requestContentIv: encrypted.requestContentIv,
+                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+                requestContentTag: encrypted.requestContentTag,
                 tokens: params.tokens ?? null,
                 latency: params.latency,
                 statusCode: params.statusCode,

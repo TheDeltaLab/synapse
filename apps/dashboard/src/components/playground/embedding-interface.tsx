@@ -18,15 +18,20 @@ const VECTOR_PREVIEW_COUNT = 8;
 export function EmbeddingInterface() {
     const [apiKey, setApiKey] = useState('');
     const [inputText, setInputText] = useState('');
+    const [batchMode, setBatchMode] = useState(false);
     const { result, isLoading, error, latency, settings, sendEmbedding, clearResults, updateSettings } = useEmbeddings();
     const hasModelSelection = Boolean(settings.modelSelection.provider && settings.modelSelection.model);
 
+    const batchInputs = inputText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    const hasContent = batchMode ? batchInputs.length > 0 : inputText.trim().length > 0;
+
     const handleSubmit = () => {
-        if (!apiKey.trim() || !inputText.trim() || !hasModelSelection) return;
-        sendEmbedding(inputText, apiKey);
+        if (!apiKey.trim() || !hasContent || !hasModelSelection) return;
+        sendEmbedding(batchMode ? batchInputs : inputText, apiKey);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        // In batch mode plain Enter inserts a newline; only Cmd/Ctrl+Enter submits
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             handleSubmit();
@@ -76,6 +81,19 @@ export function EmbeddingInterface() {
 
                             <div className="flex items-center justify-between">
                                 <div className="space-y-0.5">
+                                    <Label>Batch mode</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Each non-empty line becomes a separate input
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={batchMode}
+                                    onCheckedChange={setBatchMode}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
                                     <Label>Cache</Label>
                                     <p className="text-xs text-muted-foreground">
                                         Use cached responses when available
@@ -111,13 +129,27 @@ export function EmbeddingInterface() {
                 <div className="flex-1 p-6 space-y-6">
                     {/* Input Section */}
                     <div className="space-y-3">
-                        <Label className="text-base font-medium">Input Text</Label>
+                        <div className="flex items-center justify-between">
+                            <Label className="text-base font-medium">
+                                {batchMode ? 'Input Texts (one per line)' : 'Input Text'}
+                            </Label>
+                            {batchMode && (
+                                <span className="text-xs text-muted-foreground">
+                                    {batchInputs.length}
+                                    {' '}
+                                    input
+                                    {batchInputs.length === 1 ? '' : 's'}
+                                </span>
+                            )}
+                        </div>
                         <Textarea
-                            placeholder="Enter text to generate embeddings..."
+                            placeholder={batchMode
+                                ? 'Enter one text per line...\nfirst input\nsecond input'
+                                : 'Enter text to generate embeddings...'}
                             value={inputText}
                             onChange={e => setInputText(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            rows={4}
+                            rows={batchMode ? 8 : 4}
                             className="resize-y"
                         />
                         <div className="flex items-center justify-between">
@@ -126,7 +158,7 @@ export function EmbeddingInterface() {
                             </p>
                             <Button
                                 onClick={handleSubmit}
-                                disabled={isLoading || !apiKey.trim() || !inputText.trim() || !hasModelSelection}
+                                disabled={isLoading || !apiKey.trim() || !hasContent || !hasModelSelection}
                             >
                                 {isLoading
                                     ? (
@@ -138,7 +170,7 @@ export function EmbeddingInterface() {
                                     : (
                                             <>
                                                 <Send className="mr-2 h-4 w-4" />
-                                                Generate Embedding
+                                                {batchMode ? `Generate ${batchInputs.length} Embeddings` : 'Generate Embedding'}
                                             </>
                                         )}
                             </Button>
@@ -167,10 +199,16 @@ export function EmbeddingInterface() {
                                 </Card>
                                 <Card>
                                     <CardHeader className="pb-2">
-                                        <CardTitle className="text-sm font-medium text-muted-foreground">Tokens</CardTitle>
+                                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                                            {result.embeddings.length > 1 ? 'Inputs / Tokens' : 'Tokens'}
+                                        </CardTitle>
                                     </CardHeader>
                                     <CardContent>
-                                        <p className="text-2xl font-bold">{result.usage.tokens.toLocaleString()}</p>
+                                        <p className="text-2xl font-bold">
+                                            {result.embeddings.length > 1
+                                                ? `${result.embeddings.length} / ${result.usage.tokens.toLocaleString()}`
+                                                : result.usage.tokens.toLocaleString()}
+                                        </p>
                                     </CardContent>
                                 </Card>
                                 <Card>
@@ -179,7 +217,7 @@ export function EmbeddingInterface() {
                                     </CardHeader>
                                     <CardContent>
                                         <p className="text-2xl font-bold">
-                                            {result.embedding.length.toLocaleString()}
+                                            {(result.embeddings[0]?.length ?? 0).toLocaleString()}
                                         </p>
                                     </CardContent>
                                 </Card>
@@ -195,35 +233,37 @@ export function EmbeddingInterface() {
                                 </Card>
                             </div>
 
-                            {/* Vector Preview */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm font-medium">
-                                        Embedding Vector
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="rounded-md bg-muted p-3">
-                                        <code className="text-xs font-mono break-all">
-                                            [
-                                            {result.embedding.slice(0, VECTOR_PREVIEW_COUNT).map((v, i) => (
-                                                <span key={i}>
-                                                    {i > 0 && ', '}
-                                                    <span className="text-blue-600 dark:text-blue-400">
-                                                        {v.toFixed(8)}
+                            {/* Vector Preview(s) */}
+                            {result.embeddings.map((vec, vecIdx) => (
+                                <Card key={vecIdx}>
+                                    <CardHeader className="pb-2">
+                                        <CardTitle className="text-sm font-medium">
+                                            {result.embeddings.length > 1 ? `Embedding #${vecIdx + 1}` : 'Embedding Vector'}
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="rounded-md bg-muted p-3">
+                                            <code className="text-xs font-mono break-all">
+                                                [
+                                                {vec.slice(0, VECTOR_PREVIEW_COUNT).map((v, i) => (
+                                                    <span key={i}>
+                                                        {i > 0 && ', '}
+                                                        <span className="text-blue-600 dark:text-blue-400">
+                                                            {v.toFixed(8)}
+                                                        </span>
                                                     </span>
-                                                </span>
-                                            ))}
-                                            {result.embedding.length > VECTOR_PREVIEW_COUNT && (
-                                                <span className="text-muted-foreground">
-                                                    {`, ...${(result.embedding.length - VECTOR_PREVIEW_COUNT).toLocaleString()} more`}
-                                                </span>
-                                            )}
-                                            ]
-                                        </code>
-                                    </div>
-                                </CardContent>
-                            </Card>
+                                                ))}
+                                                {vec.length > VECTOR_PREVIEW_COUNT && (
+                                                    <span className="text-muted-foreground">
+                                                        {`, ...${(vec.length - VECTOR_PREVIEW_COUNT).toLocaleString()} more`}
+                                                    </span>
+                                                )}
+                                                ]
+                                            </code>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
                         </div>
                     )}
 

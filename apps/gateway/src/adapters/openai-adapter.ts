@@ -43,6 +43,7 @@ export class OpenAIAdapter implements ProviderAdapter {
                     type: 'embedding',
                     model: body.model,
                     inputs,
+                    dimensions: typeof body.dimensions === 'number' ? body.dimensions : undefined,
                 };
             }
 
@@ -87,16 +88,18 @@ export class OpenAIAdapter implements ProviderAdapter {
     parseEmbeddingResponse(responseBody: string): ParsedEmbeddingResponse {
         try {
             const body = JSON.parse(responseBody);
+            const firstVector = body.data?.[0]?.embedding;
+            const dimensions = Array.isArray(firstVector) ? firstVector.length : null;
             const usage = body.usage;
-            if (!usage) return { tokens: null };
+            if (!usage) return { tokens: null, dimensions };
             const tokens = typeof usage.total_tokens === 'number'
                 ? usage.total_tokens
                 : typeof usage.prompt_tokens === 'number'
                     ? usage.prompt_tokens
                     : null;
-            return { tokens };
+            return { tokens, dimensions };
         } catch {
-            return { tokens: null };
+            return { tokens: null, dimensions: null };
         }
     }
 
