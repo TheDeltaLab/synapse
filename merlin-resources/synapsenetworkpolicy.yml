@@ -104,6 +104,20 @@ defaultConfig:
       ports:
         - port: 3000
 
+    - name: gateway-from-cortex
+      # cortex-engine reads SYNAPSE_URL=http://synapse-gateway.synapse...:3000
+      # (verified via `kubectl exec -n cortex deploy/cortex-engine -- env`).
+      podSelector:
+        matchLabels:
+          app: synapse-gateway
+      from:
+        - namespace: cortex
+          podSelector:
+            matchLabels:
+              app: cortex-engine
+      ports:
+        - port: 3000
+
   egress:
     - name: to-otel
       # synapse pushes OTLP to otel-gateway in the observability ns.
