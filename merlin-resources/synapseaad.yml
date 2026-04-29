@@ -1,0 +1,31 @@
+name: synapse-aad
+type: AzureServicePrincipal
+region: none
+
+authProvider:
+  name: AzureEntraID
+
+dependencies:
+  - resource: AzureKeyVault.shared
+    isHardDependency: true
+
+defaultConfig:
+  displayName: synapse-aad-${ this.ring }
+  webRedirectUris:
+    - https://synapse-dashboard.${ this.ring }.thebrainly.dev/oauth2/callback
+  assignmentRequired: true
+  apiPermissions: oidc
+
+specificConfig:
+  - ring: test
+    clientSecretKeyVault:
+      vaultNames:
+        - brainlysharedtstkrcakv
+      secretName: synapse-oauth2-proxy-client-secret
+    cookieSecretKeyVault:
+      vaultNames:
+        - brainlysharedtstkrcakv
+      secretName: synapse-oauth2-proxy-cookie-secret
+
+exports:
+  clientId: AzureServicePrincipalClientId

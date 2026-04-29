@@ -26,3 +26,6 @@ defaultConfig:
     - secretRef: synapse-shared-secrets
   envVars:
     - APP_ENV=${ this.ring }
+  ingress:
+    subdomain: synapse-gateway
+    dnsZone: thebrainly.dev
