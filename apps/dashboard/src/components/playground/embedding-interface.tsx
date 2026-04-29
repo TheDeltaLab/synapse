@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Send, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { ApiKeyInput } from './api-key-input';
 import { EmbeddingModelSelector } from './embedding-model-selector';
@@ -18,20 +18,20 @@ const VECTOR_PREVIEW_COUNT = 8;
 export function EmbeddingInterface() {
     const [apiKey, setApiKey] = useState('');
     const [inputText, setInputText] = useState('');
+    const [batchTexts, setBatchTexts] = useState<string[]>(['']);
     const [batchMode, setBatchMode] = useState(false);
     const { result, isLoading, error, latency, settings, sendEmbedding, clearResults, updateSettings } = useEmbeddings();
     const hasModelSelection = Boolean(settings.modelSelection.provider && settings.modelSelection.model);
 
-    const batchInputs = inputText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    const hasContent = batchMode ? batchInputs.length > 0 : inputText.trim().length > 0;
+    const filledBatchInputs = batchTexts.map(t => t.trim()).filter(t => t.length > 0);
+    const hasContent = batchMode ? filledBatchInputs.length > 0 : inputText.trim().length > 0;
 
     const handleSubmit = () => {
         if (!apiKey.trim() || !hasContent || !hasModelSelection) return;
-        sendEmbedding(batchMode ? batchInputs : inputText, apiKey);
+        sendEmbedding(batchMode ? filledBatchInputs : inputText, apiKey);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        // In batch mode plain Enter inserts a newline; only Cmd/Ctrl+Enter submits
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             handleSubmit();
@@ -41,6 +41,18 @@ export function EmbeddingInterface() {
     const handleDimensionsChange = (value: string) => {
         const num = parseInt(value, 10);
         updateSettings({ dimensions: isNaN(num) || num <= 0 ? null : num });
+    };
+
+    const updateBatchText = (index: number, value: string) => {
+        setBatchTexts(prev => prev.map((t, i) => (i === index ? value : t)));
+    };
+
+    const addBatchTextAfter = (index: number) => {
+        setBatchTexts(prev => [...prev.slice(0, index + 1), '', ...prev.slice(index + 1)]);
+    };
+
+    const removeBatchText = (index: number) => {
+        setBatchTexts(prev => (prev.length <= 1 ? [''] : prev.filter((_, i) => i !== index)));
     };
 
     return (
@@ -83,7 +95,7 @@ export function EmbeddingInterface() {
                                 <div className="space-y-0.5">
                                     <Label>Batch mode</Label>
                                     <p className="text-xs text-muted-foreground">
-                                        Each non-empty line becomes a separate input
+                                        Send multiple inputs in one request
                                     </p>
                                 </div>
                                 <Switch
@@ -114,8 +126,9 @@ export function EmbeddingInterface() {
                             onClick={() => {
                                 clearResults();
                                 setInputText('');
+                                setBatchTexts(['']);
                             }}
-                            disabled={!result && !inputText}
+                            disabled={!result && !inputText && filledBatchInputs.length === 0}
                         >
                             <Trash2 className="mr-2 h-4 w-4" />
                             Clear Results
@@ -131,27 +144,72 @@ export function EmbeddingInterface() {
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <Label className="text-base font-medium">
-                                {batchMode ? 'Input Texts (one per line)' : 'Input Text'}
+                                {batchMode ? 'Input Texts' : 'Input Text'}
                             </Label>
                             {batchMode && (
                                 <span className="text-xs text-muted-foreground">
-                                    {batchInputs.length}
+                                    {filledBatchInputs.length}
+                                    {' / '}
+                                    {batchTexts.length}
                                     {' '}
-                                    input
-                                    {batchInputs.length === 1 ? '' : 's'}
+                                    filled
                                 </span>
                             )}
                         </div>
-                        <Textarea
-                            placeholder={batchMode
-                                ? 'Enter one text per line...\nfirst input\nsecond input'
-                                : 'Enter text to generate embeddings...'}
-                            value={inputText}
-                            onChange={e => setInputText(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            rows={batchMode ? 8 : 4}
-                            className="resize-y"
-                        />
+
+                        {batchMode ? (
+                            <div className="space-y-2">
+                                {batchTexts.map((text, idx) => (
+                                    <div key={idx} className="flex items-start gap-2">
+                                        <div className="flex w-8 flex-shrink-0 items-center justify-center pt-2 font-mono text-xs text-muted-foreground">
+                                            #
+                                            {idx + 1}
+                                        </div>
+                                        <Textarea
+                                            placeholder={`Input ${idx + 1}`}
+                                            value={text}
+                                            onChange={e => updateBatchText(idx, e.target.value)}
+                                            onKeyDown={handleKeyDown}
+                                            rows={2}
+                                            className="flex-1 resize-y"
+                                        />
+                                        <div className="flex flex-col gap-1">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                onClick={() => addBatchTextAfter(idx)}
+                                                title="Add input below"
+                                            >
+                                                <Plus className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                onClick={() => removeBatchText(idx)}
+                                                disabled={batchTexts.length === 1 && text.length === 0}
+                                                title="Remove this input"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <Textarea
+                                placeholder="Enter text to generate embeddings..."
+                                value={inputText}
+                                onChange={e => setInputText(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                rows={4}
+                                className="resize-y"
+                            />
+                        )}
+
                         <div className="flex items-center justify-between">
                             <p className="text-xs text-muted-foreground">
                                 Press Ctrl+Enter (Cmd+Enter) to submit
@@ -170,7 +228,7 @@ export function EmbeddingInterface() {
                                     : (
                                             <>
                                                 <Send className="mr-2 h-4 w-4" />
-                                                {batchMode ? `Generate ${batchInputs.length} Embeddings` : 'Generate Embedding'}
+                                                {batchMode ? `Generate ${filledBatchInputs.length} Embeddings` : 'Generate Embedding'}
                                             </>
                                         )}
                             </Button>
