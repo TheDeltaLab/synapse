@@ -78,6 +78,19 @@ describe('OpenAIAdapter', () => {
             const result = adapter.parseRequest(body);
             expect(result.type).toBe('embedding');
             expect(result.inputs).toEqual(['Hello', 'World']);
+            expect(result.dimensions).toBeUndefined();
+        });
+
+        it('should extract dimensions from embedding request', () => {
+            const body = JSON.stringify({
+                model: 'text-embedding-3-small',
+                input: ['Hello', 'World'],
+                dimensions: 256,
+            });
+
+            const result = adapter.parseRequest(body);
+            expect(result.type).toBe('embedding');
+            expect(result.dimensions).toBe(256);
         });
 
         it('should return unknown for invalid JSON', () => {
@@ -255,6 +268,7 @@ describe('OpenAIAdapter', () => {
 
             const result = adapter.parseEmbeddingResponse(body);
             expect(result.tokens).toBe(5);
+            expect(result.dimensions).toBe(2);
         });
 
         it('should fallback to prompt_tokens when total_tokens is missing', () => {
@@ -264,21 +278,24 @@ describe('OpenAIAdapter', () => {
 
             const result = adapter.parseEmbeddingResponse(body);
             expect(result.tokens).toBe(8);
+            expect(result.dimensions).toBeNull();
         });
 
-        it('should return null when usage is missing', () => {
+        it('should return null tokens when usage is missing but still parse dimensions', () => {
             const body = JSON.stringify({
                 object: 'list',
-                data: [],
+                data: [{ embedding: [0.1, 0.2, 0.3, 0.4] }],
             });
 
             const result = adapter.parseEmbeddingResponse(body);
             expect(result.tokens).toBeNull();
+            expect(result.dimensions).toBe(4);
         });
 
         it('should return null for invalid JSON', () => {
             const result = adapter.parseEmbeddingResponse('not json');
             expect(result.tokens).toBeNull();
+            expect(result.dimensions).toBeNull();
         });
     });
 });

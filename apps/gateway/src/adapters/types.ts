@@ -21,10 +21,12 @@ export interface ParsedRequest {
     stream?: boolean;
     messages?: ChatMessage[];
     inputs?: string[];
+    dimensions?: number;
 }
 
 export interface ParsedEmbeddingResponse {
     tokens: number | null;
+    dimensions: number | null;
 }
 
 export interface RouteMatch {

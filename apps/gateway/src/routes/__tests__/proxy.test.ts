@@ -36,6 +36,11 @@ vi.mock('@synapse/dal', () => ({
         contentIv: null,
         contentTag: null,
     })),
+    encryptEmbeddingInputs: vi.fn((inputs: string[] | null) => ({
+        requestContent: inputs ? new Uint8Array(Buffer.from(JSON.stringify(inputs), 'utf8')) : null,
+        requestContentIv: null,
+        requestContentTag: null,
+    })),
     isEncryptionConfigured: vi.fn(() => false),
 }));
 
@@ -97,11 +102,16 @@ vi.mock('../../adapters/index.js', () => ({
         parseEmbeddingResponse: vi.fn((body: string) => {
             try {
                 const data = JSON.parse(body);
+                const firstVector = data.data?.[0]?.embedding;
+                const dimensions = Array.isArray(firstVector) ? firstVector.length : null;
                 const usage = data.usage;
-                if (!usage) return { tokens: null };
-                return { tokens: typeof usage.total_tokens === 'number' ? usage.total_tokens : null };
+                if (!usage) return { tokens: null, dimensions };
+                return {
+                    tokens: typeof usage.total_tokens === 'number' ? usage.total_tokens : null,
+                    dimensions,
+                };
             } catch {
-                return { tokens: null };
+                return { tokens: null, dimensions: null };
             }
         }),
     })),
@@ -258,10 +268,15 @@ describe('handleProxy', () => {
             expect(prisma.embeddingLog.create).toHaveBeenCalledWith(expect.objectContaining({
                 data: expect.objectContaining({
                     inputCount: 1,
-                    requestContent: JSON.stringify(['Hello, world!']),
+                    requestContent: expect.any(Uint8Array),
                     tokens: 5,
                 }),
             }));
+
+            const writtenInputs = (prisma.embeddingLog.create as unknown as ReturnType<typeof vi.fn>)
+                .mock.calls[0]?.[0]?.data?.requestContent;
+            // Without ENCRYPTION_KEY, payload is plaintext UTF-8 JSON
+            expect(Buffer.from(writtenInputs).toString('utf8')).toBe(JSON.stringify(['Hello, world!']));
         });
     });
 
@@ -450,7 +465,7 @@ describe('handleProxy', () => {
                 parseRequest: vi.fn(() => ({ type: 'unknown' as const })),
                 parseResponse: vi.fn(() => ({ content: null, usage: null })),
                 parseStreamingResponse: vi.fn(() => ({ content: null, usage: null })),
-                parseEmbeddingResponse: vi.fn(() => ({ tokens: null })),
+                parseEmbeddingResponse: vi.fn(() => ({ tokens: null, dimensions: null })),
             });
 
             const res = await app.request('/v1/chat/completions', {

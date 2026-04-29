@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { EmbeddingModel } from 'ai';
-import { embed } from 'ai';
+import { embed, embedMany } from 'ai';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:3000';
 
@@ -44,11 +44,24 @@ export async function POST(request: Request) {
     }
 
     const embeddingModel = createEmbeddingModel(provider || 'openai', model, apiKey, headers);
+    const providerOptions = dimensions ? { openai: { dimensions } } : undefined;
+
+    if (Array.isArray(input)) {
+        const result = await embedMany({
+            model: embeddingModel,
+            values: input,
+            ...(providerOptions ? { providerOptions } : {}),
+        });
+        return Response.json({
+            embeddings: result.embeddings,
+            usage: { tokens: result.usage.tokens },
+        });
+    }
 
     const result = await embed({
         model: embeddingModel,
         value: input,
-        ...(dimensions ? { providerOptions: { openai: { dimensions } } } : {}),
+        ...(providerOptions ? { providerOptions } : {}),
     });
 
     return Response.json({

@@ -176,3 +176,63 @@ export function decryptContent(
         };
     }
 }
+
+export interface EncryptedEmbeddingInputs {
+    requestContent: Uint8Array | null;
+    requestContentIv: Uint8Array | null;
+    requestContentTag: Uint8Array | null;
+}
+
+/**
+ * Encrypt embedding input texts. When encryption is not configured, returns
+ * the plaintext JSON in `requestContent` and null IV/tag — readers detect this
+ * by absence of IV/tag.
+ */
+export function encryptEmbeddingInputs(inputs: string[] | null): EncryptedEmbeddingInputs {
+    if (!inputs) {
+        return { requestContent: null, requestContentIv: null, requestContentTag: null };
+    }
+    const plaintext = JSON.stringify(inputs);
+    if (!isEncryptionConfigured()) {
+        return {
+            requestContent: new Uint8Array(Buffer.from(plaintext, 'utf8')),
+            requestContentIv: null,
+            requestContentTag: null,
+        };
+    }
+    const { ciphertext, iv, tag } = encrypt(plaintext);
+    return {
+        requestContent: ciphertext,
+        requestContentIv: iv,
+        requestContentTag: tag,
+    };
+}
+
+/**
+ * Decrypt embedding inputs back to a string array. Falls back to UTF-8 JSON
+ * when IV/tag are absent (legacy or unencrypted rows).
+ */
+export function decryptEmbeddingInputs(
+    requestContent: Uint8Array | null,
+    requestContentIv: Uint8Array | null,
+    requestContentTag: Uint8Array | null,
+): string[] | null {
+    if (!requestContent) return null;
+    let raw: string;
+    if (requestContentIv && requestContentTag) {
+        try {
+            raw = decrypt(requestContent, requestContentIv, requestContentTag);
+        } catch (error) {
+            console.error('Failed to decrypt embedding inputs:', error);
+            return null;
+        }
+    } else {
+        raw = Buffer.from(requestContent).toString('utf8');
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.map(String) : null;
+    } catch {
+        return null;
+    }
+}

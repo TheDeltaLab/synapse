@@ -95,7 +95,7 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     parseEmbeddingResponse(_responseBody: string): ParsedEmbeddingResponse {
         // Anthropic does not offer an embedding API
-        return { tokens: null };
+        return { tokens: null, dimensions: null };
     }
 
     private extractContent(contentBlocks: any): string | null {
