@@ -76,7 +76,9 @@ model EmbeddingLog {
   // Request details
   inputCount      Int      // Number of input texts (> 1 for batch requests)
   dimensions      Int?     // Requested dimensions (if specified)
-  requestContent  String?  @db.Text // Raw input text(s) as JSON stringified array
+  requestContent  Bytes?   // Encrypted (AES-256-GCM) JSON array of input texts; plaintext UTF-8 JSON when ENCRYPTION_KEY unset
+  requestContentIv  Bytes? // IV for requestContent (null = unencrypted)
+  requestContentTag Bytes? // Auth tag for requestContent (null = unencrypted)
 
   // Usage stats
   tokens      Int?     // Token consumption

@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { EmbeddingLogItem } from '@synapse/shared';
 import { Header } from '@/components/layout/header';
+import { EmbeddingDetailPanel } from '@/components/logs/embedding-detail-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -33,6 +34,8 @@ export default function EmbeddingLogsPage() {
     const [totalPages, setTotalPages] = useState(0);
     const [providerFilter, setProviderFilter] = useState<string>('all');
     const [providers, setProviders] = useState<string[]>([]);
+    const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+    const [detailOpen, setDetailOpen] = useState(false);
     const limit = 20;
 
     useEffect(() => {
@@ -148,7 +151,14 @@ export default function EmbeddingLogsPage() {
                                         </TableRow>
                                     ) : (
                                         logs.map(log => (
-                                            <TableRow key={log.id}>
+                                            <TableRow
+                                                key={log.id}
+                                                className="cursor-pointer hover:bg-muted/50"
+                                                onClick={() => {
+                                                    setSelectedLogId(log.id);
+                                                    setDetailOpen(true);
+                                                }}
+                                            >
                                                 <TableCell className="text-sm">
                                                     {new Date(log.createdAt).toLocaleString()}
                                                 </TableCell>
@@ -159,7 +169,7 @@ export default function EmbeddingLogsPage() {
                                                     {log.model}
                                                 </TableCell>
                                                 <TableCell className="max-w-xs text-sm">
-                                                    <EmbeddingContentPreview content={log.requestContent} />
+                                                    <EmbeddingContentPreview content={log.requestContent} inputCount={log.inputCount} />
                                                 </TableCell>
                                                 <TableCell className="text-right text-sm">
                                                     {log.inputCount}
@@ -226,14 +236,25 @@ export default function EmbeddingLogsPage() {
                     </>
                 )}
             </div>
+
+            <EmbeddingDetailPanel
+                logId={selectedLogId}
+                open={detailOpen}
+                onOpenChange={(open) => {
+                    setDetailOpen(open);
+                    if (!open) setSelectedLogId(null);
+                }}
+            />
         </div>
     );
 }
 
 const MAX_PREVIEW_LENGTH = 80;
 
-function EmbeddingContentPreview({ content }: { content: string | null }) {
-    if (!content) return <span className="text-muted-foreground">-</span>;
+function EmbeddingContentPreview({ content, inputCount }: { content: string | null; inputCount: number }) {
+    if (!content) {
+        return <span className="text-muted-foreground">{inputCount > 0 ? `[${inputCount} inputs]` : '-'}</span>;
+    }
 
     // Try parsing as JSON array of input strings (new format)
     try {
@@ -241,17 +262,18 @@ function EmbeddingContentPreview({ content }: { content: string | null }) {
         if (Array.isArray(parsed)) {
             const texts = parsed.filter((item): item is string => typeof item === 'string');
             if (texts.length > 0) {
-                const preview = texts.length === 1
-                    ? texts[0]!
-                    : texts.map((t, i) => `${i + 1}. ${t}`).join(' ');
-                const truncated = preview.length > MAX_PREVIEW_LENGTH
-                    ? preview.slice(0, MAX_PREVIEW_LENGTH) + '...'
-                    : preview;
+                const first = texts[0]!;
+                const truncated = first.length > MAX_PREVIEW_LENGTH
+                    ? first.slice(0, MAX_PREVIEW_LENGTH) + '...'
+                    : first;
                 return (
-                    // TODO: For large embedding inputs, texts.join('\n') in the title attribute
-                    // can create very large DOM attributes and degrade rendering. Consider
-                    // truncating the title or using a bounded tooltip.
-                    <span className="break-all" title={texts.join('\n')}>
+                    <span className="break-all" title={texts.slice(0, 10).join('\n') + (texts.length > 10 ? `\n... +${texts.length - 10} more` : '')}>
+                        {texts.length > 1 && (
+                            <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                                {texts.length}
+                                ×
+                            </span>
+                        )}
                         {truncated}
                     </span>
                 );

@@ -6,7 +6,7 @@ import type { ModelSelection } from '@/components/playground/model-selector';
 import { gateway } from '@/lib/gateway';
 
 export interface EmbeddingResult {
-    embedding: number[];
+    embeddings: number[][];
     usage: {
         tokens: number;
     };
@@ -94,8 +94,11 @@ export function useEmbeddings() {
         };
     }, []);
 
-    const sendEmbedding = useCallback(async (input: string, apiKey: string) => {
-        if (!input.trim() || !apiKey.trim()) return;
+    const sendEmbedding = useCallback(async (input: string | string[], apiKey: string) => {
+        const inputs = Array.isArray(input) ? input.filter(s => s.trim().length > 0) : [];
+        const isBatch = Array.isArray(input);
+        const hasContent = isBatch ? inputs.length > 0 : input.trim().length > 0;
+        if (!hasContent || !apiKey.trim()) return;
 
         if (!settings.modelSelection.provider || !settings.modelSelection.model) {
             setError('Select an available embedding model before generating');
@@ -114,7 +117,7 @@ export function useEmbeddings() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    input: input.trim(),
+                    input: isBatch ? inputs : (input as string).trim(),
                     model: settings.modelSelection.model,
                     provider: settings.modelSelection.provider,
                     dimensions: settings.dimensions,
@@ -128,10 +131,16 @@ export function useEmbeddings() {
                 throw new Error(errorData.error || errorData.message || 'Failed to generate embedding');
             }
 
-            const data: EmbeddingResult = await response.json();
+            const raw = await response.json();
+            const embeddings: number[][] = Array.isArray(raw.embeddings)
+                ? raw.embeddings
+                : [raw.embedding];
             const elapsed = Math.round(performance.now() - startTime);
             setLatency(elapsed);
-            setResult(data);
+            setResult({
+                embeddings,
+                usage: { tokens: raw.usage?.tokens ?? 0 },
+            });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to generate embedding';
             setError(errorMessage);

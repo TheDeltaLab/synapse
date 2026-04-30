@@ -218,6 +218,8 @@ describe('providers config', () => {
         expect(getChatDeployments('deepseek').map(deployment => deployment.modelId)).toEqual([
             'deepseek-chat',
             'deepseek-reasoner',
+            'deepseek-v4-flash',
+            'deepseek-v4-pro',
         ]);
         expect(getChatDeployments('alibaba').map(deployment => deployment.modelId)).toEqual([
             'qwen3.5-omni-plus',
@@ -238,7 +240,7 @@ describe('providers config', () => {
         expect(getDefaultChatModel('anthropic')).toBe('claude-sonnet-4-6');
         expect(getDefaultChatModel('google')).toBe('gemini-2.0-flash-exp');
         expect(getDefaultChatModel('openrouter')).toBe('gpt-5-mini');
-        expect(getDefaultChatModel('deepseek')).toBe('deepseek-chat');
+        expect(getDefaultChatModel('deepseek')).toBe('deepseek-v4-flash');
         expect(getDefaultChatModel('alibaba')).toBe('qwen3.5-omni-plus');
         expect(getDefaultEmbeddingModel('openrouter')).toBe('qwen/qwen3-embedding-8b');
         expect(getDefaultEmbeddingModel('alibaba')).toBe('text-embedding-v4');
