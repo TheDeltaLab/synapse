@@ -103,9 +103,17 @@ export class GoogleAdapter implements ProviderAdapter {
         };
     }
 
-    parseEmbeddingResponse(_responseBody: string): ParsedEmbeddingResponse {
+    parseEmbeddingResponse(responseBody: string): ParsedEmbeddingResponse {
         // Google embedContent responses do not include token usage
-        return { tokens: null };
+        try {
+            const body = JSON.parse(responseBody);
+            const single = body.embedding?.values;
+            const batch = body.embeddings?.[0]?.values;
+            const vec = Array.isArray(single) ? single : Array.isArray(batch) ? batch : null;
+            return { tokens: null, dimensions: vec ? vec.length : null };
+        } catch {
+            return { tokens: null, dimensions: null };
+        }
     }
 
     private extractContent(body: Record<string, unknown>): string | null {

@@ -5,9 +5,12 @@ export {
     decrypt,
     encryptContent,
     decryptContent,
+    encryptEmbeddingInputs,
+    decryptEmbeddingInputs,
     isEncryptionConfigured,
     type EncryptedData,
     type EncryptedContent,
     type DecryptedContent,
+    type EncryptedEmbeddingInputs,
     type ChatMessage,
 } from './encryption.js';
