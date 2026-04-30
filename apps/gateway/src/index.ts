@@ -6,6 +6,7 @@ startOtelSdk({ serviceName: GATEWAY_SERVICE_NAME, enableConsolePatch: true });
 
 import app from './app.js';
 import { providers, getChatDeployments, getEmbeddingDeployments } from './config/providers.js';
+import { logBuffer } from './services/log-buffer.js';
 import { redisService } from './services/redis-service.js';
 
 const port = parseInt(process.env.PORT || '3000', 10);
@@ -20,6 +21,8 @@ const server = serve({
 console.log(`✅ Gateway server running at http://localhost:${port}`);
 console.log(`   Health check: http://localhost:${port}/health`);
 console.log(`   API endpoint: http://localhost:${port}/v1/chat/completions`);
+
+logBuffer.start();
 
 // Connect to Redis for caching (non-blocking)
 redisService.connect().then(() => {
@@ -59,6 +62,12 @@ if (embeddingProviders.length > 0) {
 function shutdown() {
     console.log('\nShutting down gateway server...');
     server.close(async () => {
+        logBuffer.stop();
+        try {
+            await logBuffer.flushAll();
+        } catch (err) {
+            console.error('Failed to flush log buffer on shutdown:', err);
+        }
         await redisService.disconnect();
         console.log('Gateway server stopped.');
         process.exit(0);

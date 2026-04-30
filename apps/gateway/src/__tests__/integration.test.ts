@@ -36,11 +36,26 @@ vi.mock('@synapse/dal', () => ({
         requestLog: { create: vi.fn().mockResolvedValue({}) },
         embeddingLog: { create: vi.fn().mockResolvedValue({}) },
     },
+    prismaLog: {
+        requestLog: {
+            create: vi.fn().mockResolvedValue({}),
+            createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        embeddingLog: {
+            create: vi.fn().mockResolvedValue({}),
+            createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+    },
     encryptContent: vi.fn().mockReturnValue({
         promptContent: null,
         responseContent: null,
         contentIv: null,
         contentTag: null,
+    }),
+    encryptEmbeddingInputs: vi.fn().mockReturnValue({
+        requestContent: null,
+        requestContentIv: null,
+        requestContentTag: null,
     }),
     isEncryptionConfigured: vi.fn().mockReturnValue(false),
 }));
