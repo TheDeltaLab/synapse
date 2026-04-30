@@ -5,6 +5,8 @@ import type { Prisma } from '@synapse/dal/prisma/client';
 type RequestLogInput = Prisma.RequestLogCreateManyInput;
 type EmbeddingLogInput = Prisma.EmbeddingLogCreateManyInput;
 
+const MAX_BACKOFF_MS = 5000;
+
 interface LogBufferConfig {
     flushIntervalMs: number;
     flushSize: number;
@@ -114,40 +116,71 @@ export class LogBuffer {
     ): Promise<void> {
         if (rows.length === 0) return;
 
-        let attempt = 0;
+        let remaining = rows;
         let lastError: unknown;
 
-        while (attempt <= this.config.maxRetries) {
+        for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
             try {
-                if (kind === 'requestLog') {
-                    await this.client.requestLog.createMany({ data: rows as RequestLogInput[] });
-                } else {
-                    await this.client.embeddingLog.createMany({ data: rows as EmbeddingLogInput[] });
-                }
+                await this.createManyByKind(kind, remaining);
                 return;
             } catch (error) {
                 lastError = error;
-                attempt++;
-                if (attempt > this.config.maxRetries) break;
-                const backoffMs = 100 * Math.pow(2, attempt - 1);
-                await sleep(backoffMs);
+                console.error(
+                    `[LogBuffer] batch ${kind} createMany failed (attempt ${attempt + 1}), falling back to per-row insert:`,
+                    error,
+                );
+                // Per-row fallback: persist whatever rows succeed individually,
+                // carry the still-failing rows into the next retry round.
+                remaining = await this.insertPerRow(kind, remaining);
+                if (remaining.length === 0) return;
+                if (attempt < this.config.maxRetries) {
+                    const backoffMs = Math.min(100 * Math.pow(2, attempt), MAX_BACKOFF_MS);
+                    await sleep(backoffMs);
+                }
             }
         }
 
-        // All retries exhausted: try one-by-one to isolate poison rows,
-        // dump anything still failing to the dead-letter file.
-        console.error(`[LogBuffer] batch write failed after ${this.config.maxRetries} retries:`, lastError);
+        // Retries exhausted: dump anything still failing to the dead-letter file.
+        console.error(
+            `[LogBuffer] ${remaining.length} ${kind} rows still failing after ${this.config.maxRetries + 1} attempts; sending to dead-letter`,
+        );
+        for (const row of remaining) {
+            await this.writeDeadLetter(kind, row, lastError);
+        }
+    }
+
+    private async createManyByKind(
+        kind: 'requestLog' | 'embeddingLog',
+        rows: (RequestLogInput | EmbeddingLogInput)[],
+    ): Promise<void> {
+        if (kind === 'requestLog') {
+            await this.client.requestLog.createMany({ data: rows as RequestLogInput[] });
+        } else if (kind === 'embeddingLog') {
+            await this.client.embeddingLog.createMany({ data: rows as EmbeddingLogInput[] });
+        } else {
+            assertNever(kind);
+        }
+    }
+
+    private async insertPerRow(
+        kind: 'requestLog' | 'embeddingLog',
+        rows: (RequestLogInput | EmbeddingLogInput)[],
+    ): Promise<(RequestLogInput | EmbeddingLogInput)[]> {
+        const stillFailing: (RequestLogInput | EmbeddingLogInput)[] = [];
         for (const row of rows) {
             try {
                 if (kind === 'requestLog') {
                     await this.client.requestLog.create({ data: row as RequestLogInput });
-                } else {
+                } else if (kind === 'embeddingLog') {
                     await this.client.embeddingLog.create({ data: row as EmbeddingLogInput });
+                } else {
+                    assertNever(kind);
                 }
-            } catch (rowError) {
-                await this.writeDeadLetter(kind, row, rowError);
+            } catch {
+                stillFailing.push(row);
             }
         }
+        return stillFailing;
     }
 
     private async writeDeadLetter(
@@ -171,6 +204,10 @@ export class LogBuffer {
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function assertNever(value: never): never {
+    throw new Error(`Unhandled log kind: ${String(value)}`);
 }
 
 // Bytes fields cannot be JSON-stringified directly; convert to base64 for the dead-letter file.

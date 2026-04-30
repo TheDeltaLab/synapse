@@ -105,34 +105,41 @@ describe('LogBuffer', () => {
         expect(client.embeddingLog.createMany).toHaveBeenCalledTimes(1);
     });
 
-    it('retries createMany on transient failure', async () => {
-        const client = makeMockClient();
-        let calls = 0;
-        client.requestLog.createMany = vi.fn(async () => {
-            calls++;
-            if (calls < 2) throw new Error('transient');
-            return { count: 1 };
-        }) as never;
-        const buf = new LogBuffer({ ...baseConfig, maxRetries: 3 }, client as unknown as ConstructorParameters<typeof LogBuffer>[1]);
-        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        buf.enqueueRequestLog(sampleReq() as never);
-        await buf.flush();
-        expect(client.requestLog.createMany).toHaveBeenCalledTimes(2);
-        errSpy.mockRestore();
-    });
-
-    it('falls back to per-row create after exhausted retries', async () => {
+    it('falls back to per-row insert immediately when batch fails (single attempt)', async () => {
         const client = makeMockClient();
         client.requestLog.createMany = vi.fn(async () => {
-            throw new Error('always fails');
+            throw new Error('batch failed');
         }) as never;
         const buf = new LogBuffer({ ...baseConfig, maxRetries: 1 }, client as unknown as ConstructorParameters<typeof LogBuffer>[1]);
         const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         buf.enqueueRequestLog(sampleReq(1) as never);
         buf.enqueueRequestLog(sampleReq(2) as never);
         await buf.flush();
-        expect(client.requestLog.createMany).toHaveBeenCalledTimes(2); // initial + 1 retry
-        expect(client.requestLog.create).toHaveBeenCalledTimes(2); // per-row fallback
+        // Per-row succeeds on the first attempt → no further retries needed
+        expect(client.requestLog.createMany).toHaveBeenCalledTimes(1);
+        expect(client.requestLog.create).toHaveBeenCalledTimes(2);
+        errSpy.mockRestore();
+    });
+
+    it('carries still-failing per-row inserts into the next retry round', async () => {
+        const client = makeMockClient();
+        client.requestLog.createMany = vi.fn(async () => {
+            throw new Error('always batch fail');
+        }) as never;
+        let perRowCalls = 0;
+        client.requestLog.create = vi.fn(async () => {
+            perRowCalls++;
+            // First round: both rows fail. Second round: both succeed.
+            if (perRowCalls <= 2) throw new Error('row fail');
+            return {};
+        }) as never;
+        const buf = new LogBuffer({ ...baseConfig, maxRetries: 1 }, client as unknown as ConstructorParameters<typeof LogBuffer>[1]);
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        buf.enqueueRequestLog(sampleReq(1) as never);
+        buf.enqueueRequestLog(sampleReq(2) as never);
+        await buf.flush();
+        expect(client.requestLog.createMany).toHaveBeenCalledTimes(2); // attempt 1 + attempt 2
+        expect(client.requestLog.create).toHaveBeenCalledTimes(4); // 2 fail + 2 succeed
         errSpy.mockRestore();
     });
 
