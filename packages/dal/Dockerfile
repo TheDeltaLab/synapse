@@ -62,4 +62,4 @@ USER synapse
 ENV NODE_ENV=production
 WORKDIR /app/packages/dal
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["npx", "prisma", "migrate", "deploy"]
+CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]
