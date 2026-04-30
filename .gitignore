@@ -31,6 +31,8 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.synapse-log-dead-letter.jsonl
+*.dead-letter.jsonl
 
 # Testing
 coverage/
