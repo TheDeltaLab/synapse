@@ -1,10 +1,11 @@
 import type { Context } from 'hono';
-import { prisma, encryptContent, encryptEmbeddingInputs, isEncryptionConfigured } from '@synapse/dal';
+import { encryptContent, encryptEmbeddingInputs, isEncryptionConfigured } from '@synapse/dal';
 import { HTTP_STATUS, type CacheType } from '@synapse/shared';
 import { getProviderAdapter } from '../adapters/index.js';
 import type { ParsedResponse, ParsedEmbeddingResponse, ChatMessage } from '../adapters/types.js';
 import type { ProviderName } from '../config/providers.js';
 import { cachedFetch } from '../middleware/cache.js';
+import { logBuffer } from '../services/log-buffer.js';
 import { providerRegistry } from '../services/provider-registry.js';
 import { redisService } from '../services/redis-service.js';
 
@@ -481,59 +482,55 @@ async function logChatRequest(params: ChatLogParams): Promise<void> {
 
         const usage = params.parsedResponse?.usage;
 
-        await prisma.requestLog.create({
-            data: {
-                apiKeyId: params.apiKeyId,
-                provider: params.provider,
-                model: params.model,
-                statusCode: params.statusCode,
-                latency: params.latency,
-                inputTokens: usage?.inputTokens ?? null,
-                outputTokens: usage?.outputTokens ?? null,
-                totalTokens: usage ? (usage.inputTokens + usage.outputTokens) : null,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                promptContent: encryptedContent.promptContent,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                responseContent: encryptedContent.responseContent,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                contentIv: encryptedContent.contentIv,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                contentTag: encryptedContent.contentTag,
-                cached: params.cached ?? false,
-                cacheType: params.cacheType ?? null,
-                cacheTtl: params.cacheTtl ?? null,
-                costSaving: null,
-                latencySaving: null,
-            },
+        logBuffer.enqueueRequestLog({
+            apiKeyId: params.apiKeyId,
+            provider: params.provider,
+            model: params.model,
+            statusCode: params.statusCode,
+            latency: params.latency,
+            inputTokens: usage?.inputTokens ?? null,
+            outputTokens: usage?.outputTokens ?? null,
+            totalTokens: usage ? (usage.inputTokens + usage.outputTokens) : null,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            promptContent: encryptedContent.promptContent,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            responseContent: encryptedContent.responseContent,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            contentIv: encryptedContent.contentIv,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            contentTag: encryptedContent.contentTag,
+            cached: params.cached ?? false,
+            cacheType: params.cacheType ?? null,
+            cacheTtl: params.cacheTtl ?? null,
+            costSaving: null,
+            latencySaving: null,
         });
     } catch (error) {
-        console.error('Failed to log request:', error);
+        console.error('Failed to enqueue request log:', error);
     }
 }
 
 async function logEmbeddingRequest(params: EmbeddingLogParams): Promise<void> {
     try {
         const encrypted = encryptEmbeddingInputs(params.inputs);
-        await prisma.embeddingLog.create({
-            data: {
-                apiKeyId: params.apiKeyId,
-                provider: params.provider ?? 'unknown',
-                model: params.model ?? 'unknown',
-                inputCount: params.inputs?.length ?? 0,
-                dimensions: params.dimensions ?? null,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                requestContent: encrypted.requestContent,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                requestContentIv: encrypted.requestContentIv,
-                // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
-                requestContentTag: encrypted.requestContentTag,
-                tokens: params.tokens ?? null,
-                latency: params.latency,
-                statusCode: params.statusCode,
-            },
+        logBuffer.enqueueEmbeddingLog({
+            apiKeyId: params.apiKeyId,
+            provider: params.provider ?? 'unknown',
+            model: params.model ?? 'unknown',
+            inputCount: params.inputs?.length ?? 0,
+            dimensions: params.dimensions ?? null,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            requestContent: encrypted.requestContent,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            requestContentIv: encrypted.requestContentIv,
+            // @ts-expect-error - Uint8Array/Buffer type mismatch in TS 5.7+ with Node.js
+            requestContentTag: encrypted.requestContentTag,
+            tokens: params.tokens ?? null,
+            latency: params.latency,
+            statusCode: params.statusCode,
         });
     } catch (error) {
-        console.error('Failed to log embedding request:', error);
+        console.error('Failed to enqueue embedding log:', error);
     }
 }
 

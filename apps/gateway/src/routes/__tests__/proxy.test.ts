@@ -30,6 +30,16 @@ vi.mock('@synapse/dal', () => ({
             create: vi.fn(async () => ({ id: 'mock-embed-log-id' })),
         },
     },
+    prismaLog: {
+        requestLog: {
+            create: vi.fn(async () => ({ id: 'mock-log-id' })),
+            createMany: vi.fn(async () => ({ count: 1 })),
+        },
+        embeddingLog: {
+            create: vi.fn(async () => ({ id: 'mock-embed-log-id' })),
+            createMany: vi.fn(async () => ({ count: 1 })),
+        },
+    },
     encryptContent: vi.fn(() => ({
         promptContent: null,
         responseContent: null,
@@ -127,6 +137,14 @@ vi.mock('../../services/redis-service.js', () => ({
     redisService: { available: false },
 }));
 
+// Mock log buffer (proxy now enqueues instead of awaiting Prisma)
+vi.mock('../../services/log-buffer.js', () => ({
+    logBuffer: {
+        enqueueRequestLog: vi.fn(),
+        enqueueEmbeddingLog: vi.fn(),
+    },
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function parseJson(res: Response): Promise<Record<string, any>> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -190,7 +208,7 @@ describe('handleProxy', () => {
         });
 
         it('logs structured messages for chat requests', async () => {
-            const { prisma } = await import('@synapse/dal');
+            const { logBuffer } = await import('../../services/log-buffer.js');
 
             await app.request('/v1/chat/completions', {
                 method: 'POST',
@@ -204,7 +222,7 @@ describe('handleProxy', () => {
             // Wait for async logging
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            expect(prisma.requestLog.create).toHaveBeenCalled();
+            expect(logBuffer.enqueueRequestLog).toHaveBeenCalled();
         });
 
         it('uses x-synapse-provider header for routing', async () => {
@@ -234,7 +252,7 @@ describe('handleProxy', () => {
 
     describe('POST /v1/embeddings', () => {
         it('routes embedding request and logs structured inputs', async () => {
-            const { prisma } = await import('@synapse/dal');
+            const { logBuffer } = await import('../../services/log-buffer.js');
 
             mockFetch.mockImplementation(async () => {
                 return new Response(JSON.stringify({
@@ -265,16 +283,14 @@ describe('handleProxy', () => {
             // Wait for async logging
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            expect(prisma.embeddingLog.create).toHaveBeenCalledWith(expect.objectContaining({
-                data: expect.objectContaining({
-                    inputCount: 1,
-                    requestContent: expect.any(Uint8Array),
-                    tokens: 5,
-                }),
+            expect(logBuffer.enqueueEmbeddingLog).toHaveBeenCalledWith(expect.objectContaining({
+                inputCount: 1,
+                requestContent: expect.any(Uint8Array),
+                tokens: 5,
             }));
 
-            const writtenInputs = (prisma.embeddingLog.create as unknown as ReturnType<typeof vi.fn>)
-                .mock.calls[0]?.[0]?.data?.requestContent;
+            const writtenInputs = (logBuffer.enqueueEmbeddingLog as unknown as ReturnType<typeof vi.fn>)
+                .mock.calls[0]?.[0]?.requestContent;
             // Without ENCRYPTION_KEY, payload is plaintext UTF-8 JSON
             expect(Buffer.from(writtenInputs).toString('utf8')).toBe(JSON.stringify(['Hello, world!']));
         });
