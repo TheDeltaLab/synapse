@@ -49,8 +49,9 @@ RUN addgroup --system --gid 1001 synapse && \
 COPY --from=deps --chown=synapse:synapse /app/node_modules ./node_modules
 COPY --from=deps --chown=synapse:synapse /app/packages/dal/node_modules ./packages/dal/node_modules
 
-# Copy Prisma schema and migration files
+# Copy Prisma schema, config, and migration files
 COPY --chown=synapse:synapse packages/dal/prisma ./packages/dal/prisma
+COPY --chown=synapse:synapse packages/dal/prisma.config.ts ./packages/dal/
 COPY --chown=synapse:synapse packages/dal/package.json ./packages/dal/
 
 # Copy root package.json and pnpm-workspace.yaml for workspace resolution
@@ -59,6 +60,6 @@ COPY --chown=synapse:synapse package.json pnpm-workspace.yaml ./
 USER synapse
 
 ENV NODE_ENV=production
-
+WORKDIR /app/packages/dal
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "npx prisma migrate deploy --schema packages/dal/prisma/schema.prisma --url \"$DATABASE_URL\""]
+CMD ["npx", "prisma", "migrate", "deploy"]
