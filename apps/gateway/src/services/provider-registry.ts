@@ -12,6 +12,14 @@ import {
     type ModelTask,
 } from '../config/providers.js';
 
+function warnIfDeprecated(deployment: Deployment | null): void {
+    if (deployment?.deprecated) {
+        console.warn(
+            `[deprecation] Model "${deployment.modelId}" (provider: ${deployment.providerId}) is scheduled for removal. Please migrate to a supported model.`,
+        );
+    }
+}
+
 export interface ResolvedEndpoint {
     url: string;
     headers: Record<string, string>;
@@ -45,6 +53,8 @@ export class ProviderRegistry {
                     : findDeploymentByModel(modelId) ?? null
                 : null;
 
+            warnIfDeprecated(deployment);
+
             return {
                 url: provider.baseUrl + requestPath,
                 headers: {
@@ -65,6 +75,8 @@ export class ProviderRegistry {
             if (!provider?.isAvailable()) {
                 throw new Error(`Provider ${deployment.providerId} not found or not configured`);
             }
+
+            warnIfDeprecated(deployment);
 
             return {
                 url: provider.baseUrl + requestPath,
