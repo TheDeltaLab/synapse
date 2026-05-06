@@ -29,7 +29,6 @@ export async function authMiddleware(c: Context, next: Next) {
     const style = resolveResponseStyle(providerHeader, styleHeader);
 
     let token: string | undefined;
-    let expected: string;
     // if anthropic-style, look for x-api-key header
     if (style === 'anthropic') {
         token = c.req.header('x-api-key');
