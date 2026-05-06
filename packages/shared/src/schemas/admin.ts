@@ -43,6 +43,8 @@ export type ApiKeyCreatedResponse = z.infer<typeof apiKeyCreatedResponseSchema>;
 export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
 
 // Provider schemas
+export const responseStyleSchema = z.enum(['openai', 'anthropic', 'google']);
+
 export const providerInfoSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -51,6 +53,8 @@ export const providerInfoSchema = z.object({
     defaultChatModel: z.string().optional(),
     embeddingModels: z.array(z.string()),
     defaultEmbeddingModel: z.string().nullable(),
+    responseStyles: z.array(responseStyleSchema),
+    defaultResponseStyle: responseStyleSchema,
 });
 
 export const providersResponseSchema = z.object({
