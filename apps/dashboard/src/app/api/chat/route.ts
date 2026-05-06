@@ -15,10 +15,11 @@ function createLanguageModel(
     headers: Record<string, string>,
 ): LanguageModel {
     if (style === 'anthropic') {
-        // Anthropic SDK posts to /v1/messages and uses authToken for Bearer (gateway auth).
+        // Anthropic SDK posts to /v1/messages with x-api-key auth — gateway's
+        // auth middleware accepts x-api-key when the response style is anthropic.
         const anthropic = createAnthropic({
             baseURL: `${GATEWAY_URL}/v1`,
-            authToken: apiKey,
+            apiKey,
             headers,
         });
         return anthropic(model);
