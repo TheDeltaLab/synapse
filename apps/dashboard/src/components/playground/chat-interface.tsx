@@ -9,7 +9,7 @@ import { usePlaygroundChat } from '@/hooks/use-chat';
 
 export function ChatInterface() {
     const [apiKey, setApiKey] = useState('');
-    const { messages, isLoading, error, settings, sendMessage, clearMessages, updateSettings } = usePlaygroundChat(apiKey);
+    const { messages, isLoading, error, settings, providers, sendMessage, clearMessages, updateSettings } = usePlaygroundChat(apiKey);
     const hasModelSelection = Boolean(settings.modelSelection.provider && settings.modelSelection.model);
 
     let inputPlaceholder = 'Type a message...';
@@ -34,6 +34,7 @@ export function ChatInterface() {
                     <ApiKeyInput apiKey={apiKey} onApiKeyChange={setApiKey} />
                     <SettingsPanel
                         settings={settings}
+                        providers={providers}
                         onSettingsChange={updateSettings}
                         onClear={clearMessages}
                         hasMessages={messages.length > 0}
