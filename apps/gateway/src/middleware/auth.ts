@@ -30,21 +30,21 @@ export async function authMiddleware(c: Context, next: Next) {
 
     let token: string | undefined;
     let expected: string;
+    // if anthropic-style, look for x-api-key header
     if (style === 'anthropic') {
         token = c.req.header('x-api-key');
-        expected = 'x-api-key';
-    } else {
+    }
+    // openai format or fallback to openai-style
+    if (token === undefined) {
         const authHeader = c.req.header('Authorization');
         if (authHeader?.startsWith('Bearer ')) {
             token = authHeader.substring(7);
         }
-        expected = 'Authorization: Bearer';
     }
-
     if (!token) {
         return c.json({
             error: 'Unauthorized',
-            message: `Missing ${expected} header (response style: ${style})`,
+            message: `Missing API key header (response style: ${style})`,
         }, HTTP_STATUS.UNAUTHORIZED);
     }
 
