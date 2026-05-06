@@ -10,9 +10,11 @@ import { DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS } from '@/lib/constants';
 import { gateway } from '@/lib/gateway';
 
 export type Message = UIMessage;
+export type ResponseStyle = 'openai' | 'anthropic' | 'google';
 
 export interface ChatSettings {
     modelSelection: ModelSelection;
+    responseStyle: ResponseStyle | '';
     temperature: number;
     maxTokens: number;
     cacheEnabled: boolean;
@@ -42,9 +44,15 @@ function getDefaultChatSelection(providers: ProviderInfo[]): ModelSelection | nu
     };
 }
 
+function getDefaultStyleFor(providers: ProviderInfo[], providerId: string): ResponseStyle | '' {
+    return providers.find(p => p.id === providerId)?.defaultResponseStyle ?? '';
+}
+
 export function usePlaygroundChat(apiKey: string) {
+    const [providers, setProviders] = useState<ProviderInfo[]>([]);
     const [settings, setSettings] = useState<ChatSettings>({
         modelSelection: { provider: '', model: '' },
+        responseStyle: '',
         temperature: DEFAULT_TEMPERATURE,
         maxTokens: DEFAULT_MAX_TOKENS,
         cacheEnabled: true,
@@ -63,20 +71,34 @@ export function usePlaygroundChat(apiKey: string) {
                 const availableProviders = response.providers.filter(provider => (
                     provider.available && provider.chatModels.length > 0
                 ));
+                setProviders(availableProviders);
 
                 setSettings((prev) => {
-                    if (isChatSelectionAvailable(availableProviders, prev.modelSelection)) {
+                    const selectionOk = isChatSelectionAvailable(availableProviders, prev.modelSelection);
+                    const nextSelection = selectionOk
+                        ? prev.modelSelection
+                        : getDefaultChatSelection(availableProviders);
+
+                    if (!nextSelection) {
                         return prev;
                     }
 
-                    const nextSelection = getDefaultChatSelection(availableProviders);
-                    if (!nextSelection) {
+                    const providerInfo = availableProviders.find(p => p.id === nextSelection.provider);
+                    const styleOk = providerInfo
+                        && prev.responseStyle
+                        && providerInfo.responseStyles.includes(prev.responseStyle as ResponseStyle);
+                    const nextStyle: ResponseStyle | '' = styleOk
+                        ? prev.responseStyle
+                        : (providerInfo?.defaultResponseStyle ?? '');
+
+                    if (selectionOk && nextStyle === prev.responseStyle) {
                         return prev;
                     }
 
                     return {
                         ...prev,
                         modelSelection: nextSelection,
+                        responseStyle: nextStyle,
                     };
                 });
             } catch {
@@ -96,6 +118,7 @@ export function usePlaygroundChat(apiKey: string) {
         apiKey,
         model: settings.modelSelection.model,
         provider: settings.modelSelection.provider,
+        responseStyle: settings.responseStyle,
         temperature: settings.temperature,
         maxOutputTokens: settings.maxTokens,
         cacheEnabled: settings.cacheEnabled,
@@ -104,6 +127,7 @@ export function usePlaygroundChat(apiKey: string) {
         apiKey,
         model: settings.modelSelection.model,
         provider: settings.modelSelection.provider,
+        responseStyle: settings.responseStyle,
         temperature: settings.temperature,
         maxOutputTokens: settings.maxTokens,
         cacheEnabled: settings.cacheEnabled,
@@ -136,16 +160,29 @@ export function usePlaygroundChat(apiKey: string) {
     }, [setMessages]);
 
     const updateSettings = useCallback((newSettings: Partial<ChatSettings>) => {
-        setSettings(prev => ({ ...prev, ...newSettings }));
-    }, []);
+        setSettings((prev) => {
+            const merged = { ...prev, ...newSettings };
+            // If provider changed and the merged style isn't valid for the new provider,
+            // reset style to the new provider's default.
+            if (newSettings.modelSelection && newSettings.modelSelection.provider !== prev.modelSelection.provider) {
+                const providerInfo = providers.find(p => p.id === merged.modelSelection.provider);
+                if (providerInfo && (!merged.responseStyle || !providerInfo.responseStyles.includes(merged.responseStyle as ResponseStyle))) {
+                    merged.responseStyle = providerInfo.defaultResponseStyle;
+                }
+            }
+            return merged;
+        });
+    }, [providers]);
 
     return {
         messages,
         isLoading,
         error,
         settings,
+        providers,
         sendMessage,
         clearMessages,
         updateSettings,
+        getDefaultStyleFor: (providerId: string) => getDefaultStyleFor(providers, providerId),
     };
 }

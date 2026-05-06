@@ -21,6 +21,7 @@ import {
     type AnalyticsResponse,
     type EmbeddingAnalyticsResponse,
 } from '@synapse/shared';
+import { resolveResponseStyle } from '../adapters/index.js';
 import {
     providers,
     getChatDeployments,
@@ -28,6 +29,7 @@ import {
     getDefaultEmbeddingModel,
     getEmbeddingDeployments,
     type ProviderName,
+    type ResponseStyle,
 } from '../config/providers.js';
 import { providerRegistry } from '../services/provider-registry.js';
 
@@ -299,15 +301,22 @@ admin.delete('/api-keys/:id', async (c) => {
 // GET /admin/providers - List available providers and their models
 admin.get('/providers', (c) => {
     const response: ProvidersResponse = {
-        providers: providers.map(provider => ({
-            id: provider.id,
-            name: provider.name,
-            available: providerRegistry.hasProvider(provider.id),
-            chatModels: getChatDeployments(provider.id).map(deployment => deployment.modelId),
-            defaultChatModel: getDefaultChatModel(provider.id),
-            embeddingModels: getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId),
-            defaultEmbeddingModel: getDefaultEmbeddingModel(provider.id),
-        })),
+        providers: providers.map((provider) => {
+            const defaultResponseStyle = resolveResponseStyle(provider.id);
+            const compatStyles = Object.keys(provider.compat) as ResponseStyle[];
+            const responseStyles = Array.from(new Set([defaultResponseStyle, ...compatStyles]));
+            return {
+                id: provider.id,
+                name: provider.name,
+                available: providerRegistry.hasProvider(provider.id),
+                chatModels: getChatDeployments(provider.id).map(deployment => deployment.modelId),
+                defaultChatModel: getDefaultChatModel(provider.id),
+                embeddingModels: getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId),
+                defaultEmbeddingModel: getDefaultEmbeddingModel(provider.id),
+                responseStyles,
+                defaultResponseStyle,
+            };
+        }),
     };
 
     return c.json(response);
@@ -610,15 +619,22 @@ admin.get('/providers/embedding', (c) => {
     return c.json({
         providers: providers
             .filter(provider => getEmbeddingDeployments(provider.id).length > 0)
-            .map(provider => ({
-                id: provider.id,
-                name: provider.name,
-                available: availableProviders.has(provider.id as ProviderName),
-                chatModels: getChatDeployments(provider.id).map(deployment => deployment.modelId),
-                defaultChatModel: getDefaultChatModel(provider.id),
-                embeddingModels: getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId),
-                defaultEmbeddingModel: getDefaultEmbeddingModel(provider.id),
-            })),
+            .map((provider) => {
+                const defaultResponseStyle = resolveResponseStyle(provider.id);
+                const compatStyles = Object.keys(provider.compat) as ResponseStyle[];
+                const responseStyles = Array.from(new Set([defaultResponseStyle, ...compatStyles]));
+                return {
+                    id: provider.id,
+                    name: provider.name,
+                    available: availableProviders.has(provider.id as ProviderName),
+                    chatModels: getChatDeployments(provider.id).map(deployment => deployment.modelId),
+                    defaultChatModel: getDefaultChatModel(provider.id),
+                    embeddingModels: getEmbeddingDeployments(provider.id).map(deployment => deployment.modelId),
+                    defaultEmbeddingModel: getDefaultEmbeddingModel(provider.id),
+                    responseStyles,
+                    defaultResponseStyle,
+                };
+            }),
     });
 });
 

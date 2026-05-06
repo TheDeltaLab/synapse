@@ -1,16 +1,30 @@
 export type ModelTask = 'chat' | 'embedding';
+export type ResponseStyle = 'openai' | 'anthropic' | 'google';
+
+export interface CompatTarget {
+    baseUrl: string;
+    authHeaders?: (apiKey: string) => Record<string, string>;
+}
 
 export abstract class Provider<Id extends string = string> {
     readonly id: Id;
     readonly name: string;
     readonly baseUrl: string;
     readonly enabled: boolean;
+    readonly compat: Partial<Record<ResponseStyle, CompatTarget>>;
 
-    constructor(p: { id: Id; name: string; baseUrl: string; enabled?: boolean }) {
+    constructor(p: {
+        id: Id;
+        name: string;
+        baseUrl: string;
+        enabled?: boolean;
+        compat?: Partial<Record<ResponseStyle, CompatTarget>>;
+    }) {
         this.id = p.id;
         this.name = p.name;
         this.baseUrl = p.baseUrl;
         this.enabled = p.enabled ?? true;
+        this.compat = p.compat ?? {};
     }
 
     abstract getApiKey(): string;
@@ -19,7 +33,15 @@ export abstract class Provider<Id extends string = string> {
         return this.enabled && Boolean(this.getApiKey());
     }
 
-    getAuthHeaders(): Record<string, string> {
+    getBaseUrl(style?: ResponseStyle): string {
+        return (style && this.compat[style]?.baseUrl) || this.baseUrl;
+    }
+
+    getAuthHeaders(style?: ResponseStyle): Record<string, string> {
+        const compatAuth = style ? this.compat[style]?.authHeaders : undefined;
+        if (compatAuth) {
+            return compatAuth(this.getApiKey());
+        }
         return { Authorization: `Bearer ${this.getApiKey()}` };
     }
 }
@@ -67,11 +89,15 @@ class AnthropicProvider extends Provider<'anthropic'> {
     }
 
     override getAuthHeaders(): Record<string, string> {
-        return {
-            'x-api-key': this.getApiKey(),
-            'anthropic-version': '2023-06-01',
-        };
+        return anthropicAuthHeaders(this.getApiKey());
     }
+}
+
+function anthropicAuthHeaders(apiKey: string): Record<string, string> {
+    return {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+    };
 }
 
 class GoogleProvider extends Provider<'google'> {
@@ -104,10 +130,17 @@ class OpenRouterProvider extends Provider<'openrouter'> {
 
 class DeepSeekProvider extends Provider<'deepseek'> {
     constructor() {
+        const baseUrl = envOrDefault('DEEPSEEK_BASE_URL', 'https://api.deepseek.com');
         super({
             id: 'deepseek',
             name: 'DeepSeek',
-            baseUrl: envOrDefault('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
+            baseUrl,
+            compat: {
+                anthropic: {
+                    baseUrl: envOrDefault('DEEPSEEK_ANTHROPIC_BASE_URL', `${baseUrl}/anthropic`),
+                    authHeaders: anthropicAuthHeaders,
+                },
+            },
         });
     }
 

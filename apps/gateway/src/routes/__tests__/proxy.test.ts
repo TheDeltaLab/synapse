@@ -46,6 +46,7 @@ vi.mock('@synapse/dal', () => ({
 
 // Mock adapters
 vi.mock('../../adapters/index.js', () => ({
+    resolveResponseStyle: vi.fn(() => 'openai'),
     getProviderAdapter: vi.fn((_providerId: string) => ({
         matchRoute: vi.fn((method: string, path: string) => {
             // Simulate OpenAI adapter allowlist by default
@@ -228,6 +229,7 @@ describe('handleProxy', () => {
                 'claude-sonnet-4-20250514',
                 undefined,
                 'anthropic',
+                'openai',
             );
         });
     });

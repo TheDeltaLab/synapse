@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { prisma, encryptContent, encryptEmbeddingInputs, isEncryptionConfigured } from '@synapse/dal';
 import { HTTP_STATUS, type CacheType } from '@synapse/shared';
-import { getProviderAdapter } from '../adapters/index.js';
+import { getProviderAdapter, resolveResponseStyle } from '../adapters/index.js';
 import type { ParsedResponse, ParsedEmbeddingResponse, ChatMessage } from '../adapters/types.js';
 import type { ProviderName } from '../config/providers.js';
 import { cachedFetch } from '../middleware/cache.js';
@@ -23,9 +23,13 @@ const HOP_BY_HOP_HEADERS = new Set([
 // Headers stripped from client requests before forwarding upstream.
 // accept-encoding is stripped so Node.js fetch handles compression negotiation
 // and auto-decompression transparently.
+// authorization and x-api-key carry the synapse api-key — endpoint headers
+// will overlay the upstream-provider auth, but stripping the inbound auth
+// avoids any chance of leaking the synapse-key upstream.
 const STRIPPED_REQUEST_HEADERS = new Set([
     'host',
     'authorization',
+    'x-api-key',
     'content-length',
     'accept-encoding',
 ]);
@@ -150,7 +154,8 @@ export async function handleProxy(c: Context): Promise<Response> {
             }
         }
 
-        // Resolve upstream endpoint
+        // Resolve upstream endpoint (style picks provider compat target, e.g. deepseek/anthropic)
+        const style = resolveResponseStyle(providerId ?? '', responseStyle || undefined);
         let endpoint;
         try {
             endpoint = providerRegistry.resolveEndpoint(
@@ -158,6 +163,7 @@ export async function handleProxy(c: Context): Promise<Response> {
                 model,
                 undefined,
                 providerId || undefined,
+                style,
             );
         } catch (error) {
             return c.json({

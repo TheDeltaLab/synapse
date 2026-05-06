@@ -6,29 +6,27 @@ import { convertToModelMessages, streamText } from 'ai';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:3000';
 
-// Providers that use the OpenAI-compatible SDK (same /v1/chat/completions path)
-const OPENAI_COMPATIBLE_PROVIDERS = new Set(['openai', 'openrouter', 'deepseek']);
+type ResponseStyle = 'openai' | 'anthropic' | 'google';
 
 function createLanguageModel(
-    provider: string,
+    style: ResponseStyle,
     model: string,
     apiKey: string,
     headers: Record<string, string>,
 ): LanguageModel {
-    if (provider === 'anthropic') {
-        // Anthropic SDK sends to /messages (baseURL already includes /v1)
-        // Uses authToken for Authorization: Bearer (gateway auth)
+    if (style === 'anthropic') {
+        // Anthropic SDK posts to /v1/messages with x-api-key auth — gateway's
+        // auth middleware accepts x-api-key when the response style is anthropic.
         const anthropic = createAnthropic({
             baseURL: `${GATEWAY_URL}/v1`,
-            authToken: apiKey,
+            apiKey,
             headers,
         });
         return anthropic(model);
     }
 
-    if (provider === 'google') {
-        // Google SDK sends to /models/<model>:streamGenerateContent
-        // Default baseURL includes /v1beta, so paths match gateway's Google adapter
+    if (style === 'google') {
+        // Google SDK posts to /v1beta/models/<model>:streamGenerateContent.
         const google = createGoogleGenerativeAI({
             baseURL: `${GATEWAY_URL}/v1beta`,
             apiKey: 'placeholder',
@@ -40,7 +38,7 @@ function createLanguageModel(
         return google(model);
     }
 
-    // OpenAI-compatible providers (openai, openrouter, deepseek)
+    // OpenAI-style: /v1/chat/completions
     const openai = createOpenAI({
         baseURL: `${GATEWAY_URL}/v1`,
         apiKey,
@@ -49,21 +47,35 @@ function createLanguageModel(
     return openai.chat(model);
 }
 
+// Gateway defaults to provider=openai when x-synapse-provider is absent,
+// so the header can be omitted for openai itself.
+const PROVIDERS_REQUIRING_HEADER = (providerId: string) => providerId && providerId !== 'openai';
+
 export async function POST(request: Request) {
-    const { messages, model, provider, temperature, maxOutputTokens, apiKey, cacheEnabled } = await request.json();
+    const {
+        messages,
+        model,
+        provider,
+        responseStyle,
+        temperature,
+        maxOutputTokens,
+        apiKey,
+        cacheEnabled,
+    } = await request.json();
+
+    const style: ResponseStyle = (responseStyle as ResponseStyle | undefined) || 'openai';
 
     const headers: Record<string, string> = {};
-    if (provider && !OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
-        // OpenAI-compatible providers don't need x-synapse-provider header
-        // (gateway defaults to openai), but others do
+    if (PROVIDERS_REQUIRING_HEADER(provider)) {
         headers['x-synapse-provider'] = provider;
     }
+    headers['x-synapse-response-style'] = style;
     if (cacheEnabled === false) {
         headers['x-synapse-cache'] = 'false';
     }
 
     const result = streamText({
-        model: createLanguageModel(provider || 'openai', model, apiKey, headers),
+        model: createLanguageModel(style, model, apiKey, headers),
         messages: await convertToModelMessages(messages),
         temperature,
         maxOutputTokens,

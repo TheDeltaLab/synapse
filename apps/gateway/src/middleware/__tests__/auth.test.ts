@@ -74,8 +74,10 @@ describe('authMiddleware', () => {
             const res = await testApp.request('/test');
             expect(res.status).toBe(401);
 
-            const body = await res.json() as { error: string };
+            const body = await res.json() as { error: string; message: string };
             expect(body.error).toBe('Unauthorized');
+            expect(body.message).toContain('Missing API key header');
+            expect(body.message).toContain('openai');
         });
 
         it('returns 401 with invalid Bearer token', async () => {
@@ -87,6 +89,52 @@ describe('authMiddleware', () => {
                 headers: { Authorization: 'Bearer invalid-key' },
             });
             expect(res.status).toBe(401);
+        });
+
+        it('reads x-api-key when response style is anthropic', async () => {
+            const testApp = new Hono();
+            testApp.use('/*', authMiddleware);
+            testApp.get('/test', c => c.json({ ok: true }));
+
+            const res = await testApp.request('/test', {
+                headers: {
+                    'x-api-key': 'invalid-key',
+                    'x-synapse-response-style': 'anthropic',
+                },
+            });
+            expect(res.status).toBe(401);
+            const body = await res.json() as { message: string };
+            expect(body.message).toContain('Invalid or expired API key');
+        });
+
+        it('infers anthropic style from x-synapse-provider when style header absent', async () => {
+            const testApp = new Hono();
+            testApp.use('/*', authMiddleware);
+            testApp.get('/test', c => c.json({ ok: true }));
+
+            const res = await testApp.request('/test', {
+                headers: {
+                    'x-synapse-provider': 'anthropic',
+                },
+            });
+            expect(res.status).toBe(401);
+            const body = await res.json() as { message: string };
+            expect(body.message).toContain('Missing API key header');
+            expect(body.message).toContain('anthropic');
+        });
+
+        it('reads Authorization Bearer for openai style by default', async () => {
+            const testApp = new Hono();
+            testApp.use('/*', authMiddleware);
+            testApp.get('/test', c => c.json({ ok: true }));
+
+            const res = await testApp.request('/test', {
+                headers: { 'x-api-key': 'should-be-ignored' },
+            });
+            expect(res.status).toBe(401);
+            const body = await res.json() as { message: string };
+            expect(body.message).toContain('Missing API key header');
+            expect(body.message).toContain('openai');
         });
     });
 });
