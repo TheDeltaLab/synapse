@@ -1,0 +1,28 @@
+name: synapse-github
+type: AzureFederatedCredential
+project: synapse
+ring:
+  - test
+  - staging
+
+authProvider:
+  name: AzureEntraID
+
+# See merlin docs (AzureFederatedCredential) for background. credentialName
+# matches merlin/shared-resource/sharedgithubsp.yml so first deploy is no-op.
+dependencies:
+  - resource: AzureServicePrincipal.github
+    isHardDependency: true
+
+defaultConfig:
+  servicePrincipal: github
+
+specificConfig:
+  - ring: test
+    credentialName: synapse-github-nightly
+    subject: repo:TheDeltaLab/synapse:environment:nightly
+  - ring: staging
+    credentialName: synapse-github-staging
+    subject: repo:TheDeltaLab/synapse:environment:staging
+
+exports: {}
