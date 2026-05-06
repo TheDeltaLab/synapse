@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { prisma, encryptContent, encryptEmbeddingInputs, isEncryptionConfigured } from '@synapse/dal';
 import { HTTP_STATUS, type CacheType } from '@synapse/shared';
-import { getProviderAdapter } from '../adapters/index.js';
+import { getProviderAdapter, resolveResponseStyle } from '../adapters/index.js';
 import type { ParsedResponse, ParsedEmbeddingResponse, ChatMessage } from '../adapters/types.js';
 import type { ProviderName } from '../config/providers.js';
 import { cachedFetch } from '../middleware/cache.js';
@@ -150,7 +150,8 @@ export async function handleProxy(c: Context): Promise<Response> {
             }
         }
 
-        // Resolve upstream endpoint
+        // Resolve upstream endpoint (style picks provider compat target, e.g. deepseek/anthropic)
+        const style = resolveResponseStyle(providerId ?? '', responseStyle || undefined);
         let endpoint;
         try {
             endpoint = providerRegistry.resolveEndpoint(
@@ -158,6 +159,7 @@ export async function handleProxy(c: Context): Promise<Response> {
                 model,
                 undefined,
                 providerId || undefined,
+                style,
             );
         } catch (error) {
             return c.json({

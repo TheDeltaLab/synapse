@@ -262,4 +262,41 @@ describe('ProviderRegistry', () => {
             expect(registry.getDefaultEmbeddingModel('anthropic')).toBeNull();
         });
     });
+
+    describe('responseStyle compat routing', () => {
+        it('routes deepseek+anthropic style to /anthropic baseUrl with x-api-key auth', async () => {
+            process.env.DEEPSEEK_API_KEY = 'ds-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/messages',
+                undefined,
+                undefined,
+                'deepseek',
+                'anthropic',
+            );
+
+            expect(endpoint.url).toBe('https://api.deepseek.com/anthropic/v1/messages');
+            expect(endpoint.headers).toEqual({
+                'x-api-key': 'ds-key',
+                'anthropic-version': '2023-06-01',
+            });
+            expect(endpoint.providerId).toBe('deepseek');
+        });
+
+        it('routes deepseek without style to native baseUrl with bearer auth', async () => {
+            process.env.DEEPSEEK_API_KEY = 'ds-key';
+
+            const registry = await createRegistry();
+            const endpoint = registry.resolveEndpoint(
+                '/v1/chat/completions',
+                undefined,
+                undefined,
+                'deepseek',
+            );
+
+            expect(endpoint.url).toBe('https://api.deepseek.com/v1/chat/completions');
+            expect(endpoint.headers).toEqual({ Authorization: 'Bearer ds-key' });
+        });
+    });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getProviderAdapter } from '../index.js';
+import { getProviderAdapter, resolveResponseStyle } from '../index.js';
 
 describe('getProviderAdapter', () => {
     it('should return openai adapter for openai provider', () => {
@@ -50,5 +50,26 @@ describe('getProviderAdapter', () => {
     it('should fallback to openai for unknown provider', () => {
         const adapter = getProviderAdapter('unknown-provider');
         expect(adapter.style).toBe('openai');
+    });
+});
+
+describe('resolveResponseStyle', () => {
+    it('honors header override over provider default', () => {
+        expect(resolveResponseStyle('deepseek', 'anthropic')).toBe('anthropic');
+    });
+
+    it('falls back to provider default when header is absent', () => {
+        expect(resolveResponseStyle('deepseek')).toBe('openai');
+        expect(resolveResponseStyle('anthropic')).toBe('anthropic');
+        expect(resolveResponseStyle('google')).toBe('google');
+    });
+
+    it('ignores invalid header override and falls back to provider default', () => {
+        expect(resolveResponseStyle('deepseek', 'bogus')).toBe('openai');
+    });
+
+    it('defaults to openai for unknown provider with no header', () => {
+        expect(resolveResponseStyle('')).toBe('openai');
+        expect(resolveResponseStyle('mystery')).toBe('openai');
     });
 });

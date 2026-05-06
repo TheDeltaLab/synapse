@@ -10,6 +10,7 @@ import {
     type Deployment,
     type ProviderName,
     type ModelTask,
+    type ResponseStyle,
 } from '../config/providers.js';
 
 function warnIfDeprecated(deployment: Deployment | null): void {
@@ -35,6 +36,7 @@ export class ProviderRegistry {
         modelId?: string,
         task?: ModelTask,
         providerId?: string,
+        responseStyle?: ResponseStyle,
     ): ResolvedEndpoint {
         // When both model and provider are missing, default to OpenAI
         const effectiveProviderId = providerId ?? (modelId ? undefined : ProviderRegistry.DEFAULT_PROVIDER_ID);
@@ -56,9 +58,9 @@ export class ProviderRegistry {
             warnIfDeprecated(deployment);
 
             return {
-                url: provider.baseUrl + requestPath,
+                url: provider.getBaseUrl(responseStyle) + requestPath,
                 headers: {
-                    ...provider.getAuthHeaders(),
+                    ...provider.getAuthHeaders(responseStyle),
                 },
                 deployment,
                 providerId: effectiveProviderId,
@@ -79,9 +81,9 @@ export class ProviderRegistry {
             warnIfDeprecated(deployment);
 
             return {
-                url: provider.baseUrl + requestPath,
+                url: provider.getBaseUrl(responseStyle) + requestPath,
                 headers: {
-                    ...provider.getAuthHeaders(),
+                    ...provider.getAuthHeaders(responseStyle),
                 },
                 deployment,
                 providerId: deployment.providerId,

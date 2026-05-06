@@ -321,4 +321,32 @@ describe('providers config', () => {
             expect(getAvailableEmbeddingProviders()).toEqual(['openrouter', 'alibaba']);
         });
     });
+
+    describe('compat targets', () => {
+        it('DeepSeek returns its native baseUrl and bearer auth by default', () => {
+            process.env.DEEPSEEK_API_KEY = 'ds-key';
+            const ds = getProvider('deepseek')!;
+
+            expect(ds.getBaseUrl()).toBe('https://api.deepseek.com');
+            expect(ds.getAuthHeaders()).toEqual({ Authorization: 'Bearer ds-key' });
+        });
+
+        it('DeepSeek returns /anthropic baseUrl and x-api-key auth for anthropic style', () => {
+            process.env.DEEPSEEK_API_KEY = 'ds-key';
+            const ds = getProvider('deepseek')!;
+
+            expect(ds.getBaseUrl('anthropic')).toBe('https://api.deepseek.com/anthropic');
+            expect(ds.getAuthHeaders('anthropic')).toEqual({
+                'x-api-key': 'ds-key',
+                'anthropic-version': '2023-06-01',
+            });
+        });
+
+        it('falls back to native baseUrl for styles without compat configured', () => {
+            process.env.DEEPSEEK_API_KEY = 'ds-key';
+            const ds = getProvider('deepseek')!;
+
+            expect(ds.getBaseUrl('google')).toBe('https://api.deepseek.com');
+        });
+    });
 });
