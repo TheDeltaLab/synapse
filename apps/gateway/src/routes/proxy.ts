@@ -23,9 +23,13 @@ const HOP_BY_HOP_HEADERS = new Set([
 // Headers stripped from client requests before forwarding upstream.
 // accept-encoding is stripped so Node.js fetch handles compression negotiation
 // and auto-decompression transparently.
+// authorization and x-api-key carry the synapse api-key — endpoint headers
+// will overlay the upstream-provider auth, but stripping the inbound auth
+// avoids any chance of leaking the synapse-key upstream.
 const STRIPPED_REQUEST_HEADERS = new Set([
     'host',
     'authorization',
+    'x-api-key',
     'content-length',
     'accept-encoding',
 ]);

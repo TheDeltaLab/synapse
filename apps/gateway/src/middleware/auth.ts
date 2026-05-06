@@ -1,5 +1,6 @@
 import type { Context, Next } from 'hono';
 import { HTTP_STATUS } from '@synapse/shared';
+import { resolveResponseStyle } from '../adapters/index.js';
 import { authService, type ValidatedApiKey } from '../services/auth-service.js';
 
 // Extend Hono context with custom variables
@@ -20,16 +21,32 @@ export async function authMiddleware(c: Context, next: Next) {
         return next();
     }
 
-    const authHeader = c.req.header('Authorization');
+    // Pick which header carries the synapse api-key based on the resolved
+    // response style: anthropic-style clients send x-api-key (Anthropic SDK
+    // convention); openai/google-style clients send Authorization: Bearer.
+    const providerHeader = c.req.header('x-synapse-provider') ?? '';
+    const styleHeader = c.req.header('x-synapse-response-style');
+    const style = resolveResponseStyle(providerHeader, styleHeader);
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return c.json({
-            error: 'Unauthorized',
-            message: 'Missing or invalid Authorization header',
-        }, HTTP_STATUS.UNAUTHORIZED);
+    let token: string | undefined;
+    let expected: string;
+    if (style === 'anthropic') {
+        token = c.req.header('x-api-key');
+        expected = 'x-api-key';
+    } else {
+        const authHeader = c.req.header('Authorization');
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        }
+        expected = 'Authorization: Bearer';
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    if (!token) {
+        return c.json({
+            error: 'Unauthorized',
+            message: `Missing ${expected} header (response style: ${style})`,
+        }, HTTP_STATUS.UNAUTHORIZED);
+    }
 
     try {
         const validatedKey = await authService.validateApiKey(token);
